@@ -27,10 +27,10 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 // Auth Routes
 app.use('/api/auth', require('./routes/authRoutes'));
-
+app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/members', require('./routes/memberRoutes'));
 app.use('/api/membership-plans', require('./routes/membershipPlanRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));

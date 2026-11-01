@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
 import * as QRCode from 'qrcode';
+import { PaymentService } from '../../services/payment';
 
 @Component({
   selector: 'app-members',
@@ -52,9 +53,21 @@ qrImage = '';
 qrMemberName = '';
 qrMemberPhone = '';
 
+// Financial Details
+showFinancialDetails = false;
+financialLoading = false;
+financialError = '';
+selectedFinancialMember: any = null;
+memberPayments: any[] = [];
+
+totalPlanAmount = 0;
+totalPaidAmount = 0;
+totalDueAmount = 0;
+
   constructor(
     private memberService: MemberService,
-    private planService: MembershipPlanService
+    private planService: MembershipPlanService,
+    private paymentService: PaymentService
   ) {}
 
   ngOnInit(): void {
@@ -425,5 +438,217 @@ downloadQR(): void {
   link.download = `${this.qrMemberName}-QR.png`;
   link.click();
 }
+
+openFinancialDetails(member: any): void {
+  this.selectedFinancialMember = member;
+  this.showFinancialDetails = true;
+  this.financialLoading = true;
+  this.financialError = '';
+  this.memberPayments = [];
+
+  this.totalPlanAmount = 0;
+  this.totalPaidAmount = 0;
+  this.totalDueAmount = 0;
+
+  this.paymentService.getMemberPayments(member._id).subscribe({
+    next: (response: any) => {
+      this.memberPayments = response.payments || [];
+
+      // Calculate totals from membership history
+      this.planService.getMemberMemberships(member._id).subscribe({
+        next: (membershipResponse: any) => {
+          const memberships = membershipResponse.memberships || [];
+
+          this.totalPlanAmount = memberships.reduce(
+            (total: number, item: any) =>
+              total + Number(item.planPrice || 0), 0
+          );
+
+          this.totalPaidAmount = memberships.reduce(
+            (total: number, item: any) =>
+              total + Number(item.paidAmount || 0), 0
+          );
+
+          this.totalDueAmount = Math.max(
+            0,
+            this.totalPlanAmount - this.totalPaidAmount
+          );
+
+          this.financialLoading = false;
+        },
+        error: () => {
+          this.financialError = 'Unable to load membership financial details.';
+          this.financialLoading = false;
+        }
+      });
+    },
+    error: (error: any) => {
+      this.financialError =
+        error.error?.message || 'Unable to load payment history.';
+      this.financialLoading = false;
+    }
+  });
+}
+
+closeFinancialDetails(): void {
+  this.showFinancialDetails = false;
+  this.selectedFinancialMember = null;
+  this.memberPayments = [];
+  this.financialError = '';
+}
+
+
+printReceipt(payment: any): void {
+  const receiptWindow = window.open('', '_blank', 'width=800,height=700');
+
+  if (!receiptWindow) {
+    alert('Please allow pop-ups to view the receipt.');
+    return;
+  }
+
+  const memberName = this.selectedFinancialMember?.fullName || 'Member';
+  const memberPhone = this.selectedFinancialMember?.phone || '-';
+
+  const escapeHtml = (value: any): string => {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => {
+      const entities: { [key: string]: string } = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      };
+
+      return entities[char];
+    });
+  };
+
+  receiptWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment Receipt</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          padding: 35px;
+          color: #222;
+        }
+
+        .receipt {
+          max-width: 600px;
+          margin: auto;
+          border: 1px solid #ddd;
+          padding: 30px;
+          border-radius: 10px;
+        }
+
+        h1 {
+          text-align: center;
+          color: #d71920;
+        }
+
+        .subtitle {
+          text-align: center;
+          color: #666;
+        }
+
+        .row {
+          display: flex;
+          justify-content: space-between;
+          padding: 12px 0;
+          border-bottom: 1px solid #eee;
+        }
+
+        .amount {
+          font-size: 24px;
+          font-weight: bold;
+          color: #d71920;
+        }
+
+        .footer {
+          text-align: center;
+          margin-top: 30px;
+          color: #777;
+        }
+
+        @media print {
+          button {
+            display: none;
+          }
+        }
+      </style>
+    </head>
+
+    <body>
+      <div class="receipt">
+        <h1>SS FITNESS MANAGER</h1>
+        <p class="subtitle">Payment Receipt</p>
+
+        <hr>
+
+        <div class="row">
+          <strong>Member Name</strong>
+          <span>${escapeHtml(memberName)}</span>
+        </div>
+
+        <div class="row">
+          <strong>Phone</strong>
+          <span>${escapeHtml(memberPhone)}</span>
+        </div>
+
+        <div class="row">
+          <strong>Receipt Number</strong>
+          <span>${escapeHtml(payment.receiptNumber || '-')}</span>
+        </div>
+
+        <div class="row">
+          <strong>Payment Date</strong>
+          <span>${escapeHtml(
+            payment.paymentDate
+              ? new Date(payment.paymentDate).toLocaleDateString('en-IN')
+              : '-'
+          )}</span>
+        </div>
+
+        <div class="row">
+          <strong>Payment Method</strong>
+          <span>${escapeHtml(payment.paymentMethod || '-')}</span>
+        </div>
+
+        <div class="row">
+          <strong>Payment Type</strong>
+          <span>${escapeHtml(payment.paymentType || '-')}</span>
+        </div>
+
+        <div class="row">
+          <strong>Transaction ID</strong>
+          <span>${escapeHtml(payment.transactionId || '-')}</span>
+        </div>
+
+        <div class="row">
+          <strong>Payment Status</strong>
+          <span>${escapeHtml(payment.status || '-')}</span>
+        </div>
+
+        <div class="row">
+          <strong>Total Amount</strong>
+          <span class="amount">₹${escapeHtml(payment.amount)}</span>
+        </div>
+
+        <div class="footer">
+          <p>Thank you!</p>
+          <p>SS Fitness Manager</p>
+        </div>
+
+        <button onclick="window.print()">Print Receipt</button>
+      </div>
+    </body>
+    </html>
+  `);
+
+  receiptWindow.document.close();
+}
+
 
 }

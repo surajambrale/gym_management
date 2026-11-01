@@ -133,6 +133,10 @@
                                     History
                                 </button>
 
+                                <button type="button" class="financial-btn" (click)="openFinancialDetails(member)">
+                                    Financial Details
+                                </button>
+
                                 <button type="button" class="edit-btn" (click)="openEditForm(member)">
                                     Edit
                                 </button>
@@ -488,4 +492,109 @@
     </button>
 
   </div>
+</div>
+
+
+<!-- Member Financial Details Modal -->
+<div class="modal-overlay" *ngIf="showFinancialDetails">
+    <div class="modal-container financial-modal">
+
+        <div class="modal-header">
+            <div>
+                <span class="eyebrow">FINANCIAL OVERVIEW</span>
+                <h2>Financial Details</h2>
+                <p *ngIf="selectedFinancialMember">
+                    {{ selectedFinancialMember.fullName }} · {{ selectedFinancialMember.phone }}
+                </p>
+            </div>
+
+            <button type="button" class="close-btn" (click)="closeFinancialDetails()">
+                &times;
+            </button>
+        </div>
+
+        <div class="modal-body">
+
+            <div class="history-message" *ngIf="financialLoading">
+                Loading financial details...
+            </div>
+
+            <div class="history-message error" *ngIf="!financialLoading && financialError">
+                {{ financialError }}
+            </div>
+
+            <ng-container *ngIf="!financialLoading && !financialError">
+
+                <div class="financial-summary">
+                    <div class="financial-summary-card">
+                        <small>Total Membership Fees</small>
+                        <strong>₹{{ totalPlanAmount || 0 }}</strong>
+                    </div>
+
+                    <div class="financial-summary-card">
+                        <small>Total Paid</small>
+                        <strong>₹{{ totalPaidAmount || 0 }}</strong>
+                    </div>
+
+                    <div class="financial-summary-card">
+                        <small>Remaining Due</small>
+                        <strong>₹{{ totalDueAmount || 0 }}</strong>
+                    </div>
+                </div>
+
+                <div class="financial-history-heading">
+                    <h3>Payment History</h3>
+                    <span>{{ memberPayments?.length || 0 }} Transactions</span>
+                </div>
+
+                <div class="table-responsive" *ngIf="memberPayments?.length">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>DATE</th>
+                                <th>AMOUNT</th>
+                                <th>METHOD</th>
+                                <th>TYPE</th>
+                                <th>STATUS</th>
+                                <th>RECEIPT</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <tr *ngFor="let payment of memberPayments">
+                                <td>{{ payment.paymentDate | date:'dd MMM yyyy' }}</td>
+                                <td>₹{{ payment.amount }}</td>
+                                <td>{{ payment.paymentMethod }}</td>
+                                <td>{{ payment.paymentType }}</td>
+                                <td>
+                                    <span class="payment-status"
+                                        [ngClass]="(payment.status || '').toLowerCase()">
+                                        {{ payment.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button type="button" class="history-btn"
+                                        (click)="printReceipt(payment)">
+                                        View Receipt
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="history-message" *ngIf="!memberPayments?.length">
+                    No payment transactions found for this member.
+                </div>
+
+            </ng-container>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" class="cancel-btn" (click)="closeFinancialDetails()">
+                Close
+            </button>
+        </div>
+
+    </div>
 </div>

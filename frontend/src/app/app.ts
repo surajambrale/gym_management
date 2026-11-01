@@ -1,106 +1,115 @@
-import { MembershipPlans } from './pages/membership-plans/membership-plans';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
-import { filter } from 'rxjs';
+import { Router, RouterOutlet } from '@angular/router';
 import { AuthService } from './services/auth';
+import { DashboardService } from './services/dashboard';
+
+import { Members } from './pages/members/members';
+import { MembershipPlans } from './pages/membership-plans/membership-plans';
 import { Attendance } from './pages/attendance/attendance';
+import { Payments } from './pages/payments/payments';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet , MembershipPlans, Attendance],
+  imports: [
+    CommonModule,
+    RouterOutlet,
+    Members,
+    MembershipPlans,
+    Attendance,
+    Payments
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
 export class App implements OnInit {
 
   constructor(
-  private router: Router,
-  private authService: AuthService
-) {}
+    private router: Router,
+    private authService: AuthService,
+    private dashboardService: DashboardService
+  ) {}
 
-ngOnInit(): void {
-  this.verifySession();
-}
-
-verifySession(): void {
-  const currentUrl = this.router.url;
-
-  // Login/Register pages par profile verification nahi karni
-  if (
-    currentUrl.startsWith('/login') ||
-    currentUrl.startsWith('/register')
-  ) {
-    this.sessionChecking = false;
-    this.isAuthenticated = false;
-    return;
+  ngOnInit(): void {
+    this.verifySession();
   }
 
-  if (!this.authService.isLoggedIn()) {
-    this.sessionChecking = false;
-    this.isAuthenticated = false;
-    this.router.navigate(['/login']);
-    return;
-  }
+  verifySession(): void {
+    const currentUrl = this.router.url;
 
-  this.sessionChecking = true;
+    // Login/Register pages par profile verification nahi karni
+    if (
+      currentUrl.startsWith('/login') ||
+      currentUrl.startsWith('/register')
+    ) {
+      this.sessionChecking = false;
+      this.isAuthenticated = false;
+      return;
+    }
 
-  this.authService.getProfile().subscribe({
-    next: (response) => {
-      if (response.success && response.owner && response.business) {
-        this.isAuthenticated = true;
+    if (!this.authService.isLoggedIn()) {
+      this.sessionChecking = false;
+      this.isAuthenticated = false;
+      this.router.navigate(['/login']);
+      return;
+    }
 
-        this.ownerName = response.owner.name || 'Owner';
-        this.businessName =
-          response.business.businessName || 'SS Fitness Manager';
+    this.sessionChecking = true;
 
-        localStorage.setItem(
-          'owner',
-          JSON.stringify(response.owner)
-        );
+    this.authService.getProfile().subscribe({
+      next: (response) => {
+        if (response.success && response.owner && response.business) {
+          this.isAuthenticated = true;
+          this.loadDashboardData();
 
-        localStorage.setItem(
-          'business',
-          JSON.stringify(response.business)
-        );
-      } else {
+          this.ownerName = response.owner.name || 'Owner';
+          this.businessName =
+            response.business.businessName || 'SS Fitness Manager';
+
+          localStorage.setItem('owner', JSON.stringify(response.owner));
+          localStorage.setItem('business', JSON.stringify(response.business));
+
+          // Direct URL /members par page refresh hone par bhi
+          // Members module dashboard ke andar open hoga.
+          if (currentUrl.startsWith('/members')) {
+            this.selectedMenu = 'Members';
+          } else if (currentUrl.startsWith('/dashboard')) {
+            this.selectedMenu = 'Dashboard';
+          }
+        } else {
+          this.authService.logout();
+          this.isAuthenticated = false;
+          this.router.navigate(['/login']);
+        }
+
+        this.sessionChecking = false;
+      },
+
+      error: (error) => {
+        console.error('Session verification failed:', error);
+
         this.authService.logout();
         this.isAuthenticated = false;
+        this.sessionChecking = false;
+
         this.router.navigate(['/login']);
       }
+    });
+  }
 
-      this.sessionChecking = false;
-    },
-
-    error: (error) => {
-      console.error('Session verification failed:', error);
-
-      this.authService.logout();
-      this.isAuthenticated = false;
-      this.sessionChecking = false;
-
-      this.router.navigate(['/login']);
-    }
-  });
-}
-
-logout(): void {
-  this.authService.logout();
-  this.isAuthenticated = false;
-  this.ownerName = 'Admin';
-  this.router.navigate(['/login']);
-}
-
+  logout(): void {
+    this.authService.logout();
+    this.isAuthenticated = false;
+    this.ownerName = 'Admin';
+    this.selectedMenu = 'Dashboard';
+    this.router.navigate(['/login']);
+  }
 
   get isAuthRoute(): boolean {
     return this.router.url.startsWith('/register') ||
       this.router.url.startsWith('/login');
   }
-
-  get isMembersRoute(): boolean {
-  return this.router.url.startsWith('/members');
-}
 
   selectedMenu = 'Dashboard';
   mobileMenuOpen = false;
@@ -138,95 +147,31 @@ logout(): void {
     }
   ];
 
-  stats = [
-    {
-      title: 'Total Members',
-      value: '1,248',
-      change: '+12.5%',
-      description: 'Compared to last month',
-      icon: '♙',
-      color: 'blue'
-    },
-    {
-      title: 'Active Members',
-      value: '986',
-      change: '+8.2%',
-      description: 'Currently active',
-      icon: '✓',
-      color: 'green'
-    },
-    {
-      title: 'Monthly Revenue',
-      value: '₹2,45,800',
-      change: '+15.8%',
-      description: 'Compared to last month',
-      icon: '₹',
-      color: 'orange'
-    },
-    {
-      title: 'Pending Fees',
-      value: '₹38,500',
-      change: '24 members',
-      description: 'Payment pending',
-      icon: '◷',
-      color: 'red'
+  stats: any[] = [];
+  recentMembers: any[] = [];
+
+  dashboardLoading = false;
+  dashboardError = '';
+  todayAttendance = 0;
+
+  selectMenu(name: string): void {
+    this.selectedMenu = name;
+    this.mobileMenuOpen = false;
+
+    // Dashboard modules are displayed inline.
+    // Only authentication pages use router navigation.
+    if (name === 'Dashboard' || name === 'Members') {
+      return;
     }
-  ];
 
-  recentMembers = [
-    {
-      id: 'GYM001',
-      name: 'Rahul Sharma',
-      phone: '9876543210',
-      plan: 'Quarterly',
-      joining: '28 Oct 2026',
-      status: 'Active'
-    },
-    {
-      id: 'GYM002',
-      name: 'Priya Patil',
-      phone: '9876543211',
-      plan: 'Monthly',
-      joining: '27 Oct 2026',
-      status: 'Active'
-    },
-    {
-      id: 'GYM003',
-      name: 'Amit Kumar',
-      phone: '9876543212',
-      plan: 'Yearly',
-      joining: '25 Oct 2026',
-      status: 'Active'
-    },
-    {
-      id: 'GYM004',
-      name: 'Sneha Joshi',
-      phone: '9876543213',
-      plan: 'Monthly',
-      joining: '24 Oct 2026',
-      status: 'Expired'
+    if (
+      name === 'Membership Plans' ||
+      name === 'Attendance' ||
+      name === 'Payments & Fees'
+    ) {
+      return;
     }
-  ];
-
-selectMenu(name: string): void {
-  this.selectedMenu = name;
-  this.mobileMenuOpen = false;
-
-  if (name === 'Members') {
-    this.router.navigate(['/members']);
-    return;
   }
-
-  if (name === 'Dashboard') {
-    this.router.navigate(['/dashboard']);
-    return;
-  }
-
-  if (name === 'Attendance') {
-    this.router.navigate(['/attendance']);
-    return;
-  }
-}
 
   toggleMobileMenu(): void {
     this.mobileMenuOpen = !this.mobileMenuOpen;
@@ -240,4 +185,70 @@ selectMenu(name: string): void {
     }).format(new Date());
   }
 
+  loadDashboardData(): void {
+    this.dashboardLoading = true;
+    this.dashboardError = '';
+
+    this.dashboardService.getDashboardStats().subscribe({
+      next: (response) => {
+        if (response.success) {
+          const data = response.stats;
+          this.todayAttendance = data.todayAttendance;
+
+          this.stats = [
+            {
+              title: 'Total Members',
+              value: data.totalMembers.toLocaleString('en-IN'),
+              change: '',
+              description: 'All registered members',
+              icon: '♙',
+              color: 'blue'
+            },
+            {
+              title: 'Active Members',
+              value: data.activeMembers.toLocaleString('en-IN'),
+              change: '',
+              description: 'Currently active',
+              icon: '✓',
+              color: 'green'
+            },
+            {
+              title: 'Total Collected',
+              value: '₹' + data.totalCollected.toLocaleString('en-IN'),
+              change: '',
+              description: 'Membership collection',
+              icon: '₹',
+              color: 'orange'
+            },
+            {
+              title: 'Pending Fees',
+              value: '₹' + data.totalPending.toLocaleString('en-IN'),
+              change: '',
+              description: 'Remaining membership fees',
+              icon: '◷',
+              color: 'red'
+            }
+          ];
+
+          this.recentMembers = (response.recentMembers || []).map((member: any) => ({
+            id: member._id.slice(-6).toUpperCase(),
+            name: member.fullName,
+            phone: member.phone,
+            plan: '-',
+            joining: new Date(member.joiningDate || member.createdAt)
+              .toLocaleDateString('en-IN'),
+            status: member.status
+          }));
+        }
+
+        this.dashboardLoading = false;
+      },
+
+      error: (error) => {
+        console.error('Dashboard API Error:', error);
+        this.dashboardError = 'Unable to load dashboard data.';
+        this.dashboardLoading = false;
+      }
+    });
+  }
 }

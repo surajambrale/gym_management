@@ -5,11 +5,10 @@
   <p>Verifying your account...</p>
 </div>
 
-<div class="app-layout" *ngIf="!isAuthRoute && !isMembersRoute && isAuthenticated">
+<div class="app-layout" *ngIf="!isAuthRoute && isAuthenticated">
 
   <!-- Mobile Overlay -->
-  <div class="mobile-overlay" *ngIf="mobileMenuOpen" (click)="toggleMobileMenu()">
-  </div>
+  <div class="mobile-overlay" *ngIf="mobileMenuOpen" (click)="toggleMobileMenu()"></div>
 
   <!-- Sidebar -->
   <aside class="sidebar" [class.sidebar-open]="mobileMenuOpen">
@@ -33,23 +32,19 @@
     </div>
 
     <nav class="sidebar-nav">
-
       <div *ngFor="let group of menuGroups" class="nav-group">
-
         <p class="nav-heading">{{ group.title }}</p>
 
-        <button *ngFor="let item of group.items" class="nav-item" [class.active]="selectedMenu === item.name"
+        <button *ngFor="let item of group.items"
+          class="nav-item"
+          [class.active]="selectedMenu === item.name"
           (click)="selectMenu(item.name)">
 
           <span class="nav-icon">{{ item.icon }}</span>
           <span>{{ item.name }}</span>
-
           <span *ngIf="item.name === 'Attendance'" class="nav-dot"></span>
-
         </button>
-
       </div>
-
     </nav>
 
     <div class="sidebar-bottom">
@@ -65,7 +60,6 @@
         <span>© 2026 SS Builds365</span>
       </div>
     </div>
-
   </aside>
 
   <!-- Main Content -->
@@ -73,10 +67,8 @@
 
     <!-- Header -->
     <header class="topbar">
-
       <div class="header-left">
         <button class="menu-toggle" (click)="toggleMobileMenu()">☰</button>
-
         <div>
           <h1>{{ selectedMenu }}</h1>
           <p>Welcome back, {{ ownerName }}! Here's what's happening today.</p>
@@ -84,7 +76,6 @@
       </div>
 
       <div class="header-right">
-
         <div class="date-display">
           <span>◷</span>
           {{ currentDate }}
@@ -96,20 +87,16 @@
         </button>
 
         <div class="profile">
-          <div class="avatar">A</div>
+          <div class="avatar">{{ ownerName.charAt(0).toUpperCase() }}</div>
           <div class="profile-details">
             <strong>{{ ownerName }}</strong>
             <span>Business Owner</span>
           </div>
           <span>⌄</span>
         </div>
-
       </div>
 
-      <button class="logout-btn" (click)="logout()">
-        ↪ Logout
-      </button>
-
+      <button class="logout-btn" (click)="logout()">↪ Logout</button>
     </header>
 
     <!-- Dashboard -->
@@ -127,131 +114,91 @@
         </button>
       </div>
 
-
-      <!-- Stats -->
-      <div class="stats-grid">
-
-        <div class="stat-card" *ngFor="let stat of stats">
-
-          <div class="stat-top">
-            <span>{{ stat.title }}</span>
-            <div class="stat-icon" [ngClass]="stat.color">
-              {{ stat.icon }}
-            </div>
-          </div>
-
-          <h3>{{ stat.value }}</h3>
-
-          <div class="stat-bottom">
-            <span class="change">{{ stat.change }}</span>
-            <span>{{ stat.description }}</span>
-          </div>
-
-        </div>
-
+      <div class="dashboard-message" *ngIf="dashboardLoading">
+        <p>Loading your business dashboard...</p>
       </div>
 
-      <!-- Analytics -->
-      <div class="analytics-grid">
+      <div class="dashboard-error" *ngIf="dashboardError">
+        <p>{{ dashboardError }}</p>
+        <button class="secondary-btn" (click)="loadDashboardData()">Retry</button>
+      </div>
+
+      <div class="stats-grid" *ngIf="!dashboardLoading && !dashboardError">
+        <div class="stat-card" *ngFor="let stat of stats">
+          <div class="stat-top">
+            <span>{{ stat.title }}</span>
+            <div class="stat-icon" [ngClass]="stat.color">{{ stat.icon }}</div>
+          </div>
+          <h3>{{ stat.value }}</h3>
+          <div class="stat-bottom">
+            <span>{{ stat.description }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="analytics-grid" *ngIf="!dashboardLoading && !dashboardError">
 
         <div class="panel revenue-panel">
-
           <div class="panel-header">
             <div>
-              <h3>Revenue Overview</h3>
-              <p>Monthly business performance</p>
+              <h3>Membership Collection</h3>
+              <p>Total collected membership amount</p>
             </div>
-
-            <select aria-label="Revenue period">
-              <option>Last 7 Months</option>
-              <option>Last 30 Days</option>
-              <option>This Year</option>
-            </select>
           </div>
 
           <div class="chart-summary">
-            <h2>₹2,45,800</h2>
-            <span>↗ 15.8% this month</span>
+            <h2>{{ stats[2]?.value || '₹0' }}</h2>
+            <span>Total membership collection</span>
           </div>
 
-          <div class="bar-chart">
-            <div class="chart-column" *ngFor="let bar of [
-              {month:'Apr',height:40},
-              {month:'May',height:58},
-              {month:'Jun',height:48},
-              {month:'Jul',height:75},
-              {month:'Aug',height:60},
-              {month:'Sep',height:85},
-              {month:'Oct',height:100}
-            ]">
-              <div class="bar-track">
-                <div class="bar" [style.height.%]="bar.height"></div>
-              </div>
-              <span>{{ bar.month }}</span>
-            </div>
+          <div class="collection-info">
+            <p>
+              This amount is calculated from membership records
+              stored in your business account.
+            </p>
           </div>
-
         </div>
 
         <div class="panel attendance-panel">
-
           <div class="panel-header">
             <div>
               <h3>Today's Attendance</h3>
               <p>Member check-in overview</p>
             </div>
-            <span class="live-badge">● LIVE DEMO</span>
+            <span class="live-badge">● LIVE DATA</span>
           </div>
 
           <div class="attendance-number">
-            <h2>186</h2>
-            <span>Members checked in</span>
-          </div>
-
-          <div class="attendance-progress">
-            <div class="progress-fill"></div>
+            <h2>{{ todayAttendance }}</h2>
+            <span>Members checked in today</span>
           </div>
 
           <div class="attendance-details">
             <div>
               <span class="legend green-legend"></span>
-              <span>Checked In</span>
-              <strong>186</strong>
-            </div>
-
-            <div>
-              <span class="legend gray-legend"></span>
-              <span>Not Checked In</span>
-              <strong>64</strong>
+              <span>Checked In Today</span>
+              <strong>{{ todayAttendance }}</strong>
             </div>
           </div>
 
           <button class="secondary-btn" (click)="selectMenu('Attendance')">
             View Attendance →
           </button>
-
         </div>
-
       </div>
 
-      <!-- Recent Members -->
-      <div class="panel members-panel">
-
+      <div class="panel members-panel" *ngIf="!dashboardLoading && !dashboardError">
         <div class="panel-header">
-
           <div>
             <h3>Recent Members</h3>
             <p>Latest registered members</p>
           </div>
-
           <button class="text-btn" (click)="selectMenu('Members')">
             View All Members →
           </button>
-
         </div>
 
         <div class="table-wrapper">
-
           <table>
             <thead>
               <tr>
@@ -266,61 +213,66 @@
 
             <tbody>
               <tr *ngFor="let member of recentMembers">
-
                 <td>
                   <div class="member-name">
                     <div class="member-avatar">
-                      {{ member.name.charAt(0) }}
+                      {{ member.name.charAt(0).toUpperCase() }}
                     </div>
                     <strong>{{ member.name }}</strong>
                   </div>
                 </td>
-
                 <td>{{ member.id }}</td>
                 <td>{{ member.phone }}</td>
                 <td>{{ member.plan }}</td>
                 <td>{{ member.joining }}</td>
-
                 <td>
-                  <span class="status" [class.status-active]="member.status === 'Active'"
+                  <span class="status"
+                    [class.status-active]="member.status === 'Active'"
                     [class.status-expired]="member.status === 'Expired'">
                     {{ member.status }}
                   </span>
                 </td>
+              </tr>
 
+              <tr *ngIf="recentMembers.length === 0">
+                <td colspan="6" class="empty-state">
+                  No members registered yet.
+                </td>
               </tr>
             </tbody>
           </table>
-
         </div>
-
       </div>
 
       <footer class="page-footer">
         <span>© 2026 SS Builds365. All rights reserved.</span>
         <span>Built with ❤️ for Fitness Businesses</span>
       </footer>
-
     </section>
 
+    <!-- Members Module: inline dashboard content -->
+    <app-members *ngIf="selectedMenu === 'Members'"></app-members>
+
     <!-- Membership Plans Module -->
-    <app-membership-plans *ngIf="selectedMenu === 'Membership Plans'">
-    </app-membership-plans>
+    <app-membership-plans *ngIf="selectedMenu === 'Membership Plans'"></app-membership-plans>
 
     <!-- Attendance Module -->
-<app-attendance *ngIf="selectedMenu === 'Attendance'">
-</app-attendance>
+    <app-attendance *ngIf="selectedMenu === 'Attendance'"></app-attendance>
 
-   
+    <!-- Payments Module -->
+    <app-payments *ngIf="selectedMenu === 'Payments & Fees'"></app-payments>
 
     <!-- Other Modules Placeholder -->
-    <section *ngIf="selectedMenu !== 'Dashboard' && 
-                    selectedMenu !== 'Membership Plans' && 
-                    selectedMenu !== 'Attendance'" class="coming-soon">
+    <section *ngIf="
+      selectedMenu !== 'Dashboard' &&
+      selectedMenu !== 'Members' &&
+      selectedMenu !== 'Membership Plans' &&
+      selectedMenu !== 'Attendance' &&
+      selectedMenu !== 'Payments & Fees'
+    " class="coming-soon">
 
       <div class="coming-icon">⚙</div>
       <span class="eyebrow">DEVELOPMENT IN PROGRESS</span>
-
       <h2>{{ selectedMenu }}</h2>
 
       <p>
@@ -331,13 +283,7 @@
       <button class="primary-btn" (click)="selectMenu('Dashboard')">
         ← Back to Dashboard
       </button>
-
     </section>
 
-    <!-- Membership Plans Module -->
-    <!-- <app-membership-plans *ngIf="selectedMenu === 'Membership Plans'">
-    </app-membership-plans> -->
-
   </main>
-
 </div>
