@@ -544,10 +544,10 @@
 
                 <div class="financial-history-heading">
                     <h3>Payment History</h3>
-                    <span>{{ memberPayments?.length || 0 }} Transactions</span>
+                    <span>{{ memberPayments.length || 0 }} Transactions</span>
                 </div>
 
-                <div class="table-responsive" *ngIf="memberPayments?.length">
+                <div class="table-responsive" *ngIf="memberPayments.length">
                     <table>
                         <thead>
                             <tr>
@@ -583,7 +583,7 @@
                     </table>
                 </div>
 
-                <div class="history-message" *ngIf="!memberPayments?.length">
+                <div class="history-message" *ngIf="!memberPayments.length">
                     No payment transactions found for this member.
                 </div>
 
