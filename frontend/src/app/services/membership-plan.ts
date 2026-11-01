@@ -1,13 +1,15 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class MembershipPlanService {
 
-  private apiUrl = 'http://localhost:5000/api/membership-plans';
+  private apiUrl = `${environment.apiUrl}/membership-plans`;
+  private memberMembershipsUrl = `${environment.apiUrl}/member-memberships`;
 
   constructor(private http: HttpClient) {}
 
@@ -27,7 +29,7 @@ export class MembershipPlanService {
 
   assignMembership(data: any): Observable<any> {
   return this.http.post<any>(
-    'http://localhost:5000/api/member-memberships/assign',
+    `${this.memberMembershipsUrl}/assign`,
     data,
     { headers: this.getAuthHeaders() }
   );
@@ -53,7 +55,7 @@ export class MembershipPlanService {
 
   getMemberMemberships(memberId: string): Observable<any> {
   return this.http.get<any>(
-    `http://localhost:5000/api/member-memberships/member/${memberId}`,
+    `${this.memberMembershipsUrl}/member/${memberId}`,
     { headers: this.getAuthHeaders() }
   );
 }

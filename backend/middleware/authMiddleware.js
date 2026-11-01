@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Owner = require('../models/Owner');
+const config = require('../config/env');
 
 const protectOwner = async (req, res, next) => {
   try {
@@ -16,7 +17,7 @@ const protectOwner = async (req, res, next) => {
 
     const decoded = jwt.verify(
       token,
-      process.env.JWT_SECRET
+      config.jwtSecret
     );
 
     const owner = await Owner.findById(decoded.ownerId);

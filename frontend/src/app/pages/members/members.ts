@@ -6,6 +6,7 @@ import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
 import * as QRCode from 'qrcode';
 import { PaymentService } from '../../services/payment';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-members',
@@ -15,6 +16,7 @@ import { PaymentService } from '../../services/payment';
   styleUrl: './members.scss'
 })
 export class Members implements OnInit {
+  readonly appName = environment.appName;
 
   members: any[] = [];
   plans: any[] = [];
@@ -582,7 +584,7 @@ printReceipt(payment: any): void {
 
     <body>
       <div class="receipt">
-        <h1>SS FITNESS MANAGER</h1>
+        <h1>${escapeHtml(this.appName.toUpperCase())}</h1>
         <p class="subtitle">Payment Receipt</p>
 
         <hr>
@@ -638,7 +640,7 @@ printReceipt(payment: any): void {
 
         <div class="footer">
           <p>Thank you!</p>
-          <p>SS Fitness Manager</p>
+          <p>${escapeHtml(this.appName)}</p>
         </div>
 
         <button onclick="window.print()">Print Receipt</button>

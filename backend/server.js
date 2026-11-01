@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const helmet = require('helmet');
+const config = require('./config/env');
 const connectDB = require('./config/db');
 
 const dns = require('node:dns');
@@ -11,17 +11,12 @@ dns.setServers([
   '8.8.8.8'
 ]);
 
-dotenv.config();
-
 const app = express();
 
 app.use(helmet());
 
 app.use(cors({
-  origin: [
-    'http://localhost:4200',
-    'http://localhost:60949'
-  ],
+  origin: config.allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -55,13 +50,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-
 const startServer = async () => {
   await connectDB();
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  app.listen(config.port, () => {
+    console.log(`Server running on port ${config.port}`);
   });
 };
 

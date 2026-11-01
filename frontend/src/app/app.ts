@@ -8,6 +8,7 @@ import { Members } from './pages/members/members';
 import { MembershipPlans } from './pages/membership-plans/membership-plans';
 import { Attendance } from './pages/attendance/attendance';
 import { Payments } from './pages/payments/payments';
+import { environment } from '../environments/environment';
 
 @Component({
   selector: 'app-root',
@@ -24,6 +25,8 @@ import { Payments } from './pages/payments/payments';
   styleUrl: './app.scss'
 })
 export class App implements OnInit {
+  readonly appName = environment.appName;
+  readonly appVersion = environment.appVersion;
 
   constructor(
     private router: Router,
@@ -65,7 +68,7 @@ export class App implements OnInit {
 
           this.ownerName = response.owner.name || 'Owner';
           this.businessName =
-            response.business.businessName || 'SS Fitness Manager';
+            response.business.businessName || this.appName;
 
           localStorage.setItem('owner', JSON.stringify(response.owner));
           localStorage.setItem('business', JSON.stringify(response.business));
@@ -115,7 +118,7 @@ export class App implements OnInit {
   mobileMenuOpen = false;
   isAuthenticated = false;
   sessionChecking = true;
-  businessName = 'SS Fitness Manager';
+  businessName = environment.appName;
   ownerName = 'Admin';
 
   menuGroups = [

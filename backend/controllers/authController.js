@@ -3,20 +3,17 @@ const jwt = require('jsonwebtoken');
 
 const Owner = require('../models/Owner');
 const Business = require('../models/Business');
+const config = require('../config/env');
 
 // Generate JWT
 const generateToken = (owner) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is missing in environment variables');
-  }
-
   return jwt.sign(
     {
       ownerId: owner._id,
       tenantId: owner.tenantId,
       role: owner.role
     },
-    process.env.JWT_SECRET,
+    config.jwtSecret,
     { expiresIn: '7d' }
   );
 };

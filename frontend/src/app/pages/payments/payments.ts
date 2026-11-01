@@ -6,6 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { PaymentService } from '../../services/payment';
 import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-payments',
@@ -15,6 +16,7 @@ import { MembershipPlanService } from '../../services/membership-plan';
   styleUrl: './payments.scss'
 })
 export class Payments implements OnInit {
+  readonly appName = environment.appName;
 
   payments: any[] = [];
   members: any[] = [];
@@ -507,7 +509,7 @@ export class Payments implements OnInit {
             <div class="logo">SS</div>
             <h1>${businessName}</h1>
             <div class="subtitle">
-              SS FITNESS MANAGER · PAYMENT RECEIPT
+              ${this.appName.toUpperCase()} · PAYMENT RECEIPT
             </div>
             <span class="paid">PAYMENT SUCCESSFUL</span>
           </div>
