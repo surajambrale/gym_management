@@ -4,7 +4,7 @@ export const environment = {
   appVersion: '1.0.0',
   frontendUrl: '',
   backendUrl: '',
-  apiUrl: '',
+  apiUrl: 'https://gym-management-1-1nnb.onrender.com',
   razorpayKeyId: '',
   cloudinary: {
     cloudName: '',
