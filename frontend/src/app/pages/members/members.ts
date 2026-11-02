@@ -1,5 +1,13 @@
 
-import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  OnDestroy,
+  Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MemberService } from '../../services/member';
@@ -7,6 +15,15 @@ import { MembershipPlanService } from '../../services/membership-plan';
 import * as QRCode from 'qrcode';
 import { PaymentService } from '../../services/payment';
 import { environment } from '../../../environments/environment';
+import {
+  Subscription,
+  finalize,
+  forkJoin,
+  from,
+  switchMap,
+  throwError,
+  timeout
+} from 'rxjs';
 
 @Component({
   selector: 'app-members',
@@ -15,7 +32,7 @@ import { environment } from '../../../environments/environment';
   templateUrl: './members.html',
   styleUrl: './members.scss'
 })
-export class Members implements OnInit, OnChanges {
+export class Members implements OnInit, OnChanges, OnDestroy {
   readonly appName = environment.appName;
   @Input() active = false;
 
@@ -51,6 +68,9 @@ historyLoading = false;
 historyError = '';
 selectedHistoryMember: any = null;
 membershipHistory: any[] = [];
+private historySubscription?: Subscription;
+private historyRequestMemberId = '';
+private historyCache = new Map<string, { records: any[]; loadedAt: number }>();
 
 // QR Code
 showQRModal = false;
@@ -59,6 +79,8 @@ qrError = '';
 qrImage = '';
 qrMemberName = '';
 qrMemberPhone = '';
+selectedQrMember: any = null;
+private qrSubscription?: Subscription;
 
 // Financial Details
 showFinancialDetails = false;
@@ -66,6 +88,15 @@ financialLoading = false;
 financialError = '';
 selectedFinancialMember: any = null;
 memberPayments: any[] = [];
+private financialSubscription?: Subscription;
+private financialRequestMemberId = '';
+private financialCache = new Map<string, {
+  payments: any[];
+  totalPlanAmount: number;
+  totalPaidAmount: number;
+  totalDueAmount: number;
+  loadedAt: number;
+}>();
 
 totalPlanAmount = 0;
 totalPaidAmount = 0;
@@ -74,7 +105,8 @@ totalDueAmount = 0;
   constructor(
     private memberService: MemberService,
     private planService: MembershipPlanService,
-    private paymentService: PaymentService
+    private paymentService: PaymentService,
+    private changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -94,6 +126,12 @@ totalDueAmount = 0;
       }
       this.loadPlans();
     }
+  }
+
+  ngOnDestroy(): void {
+    this.historySubscription?.unsubscribe();
+    this.financialSubscription?.unsubscribe();
+    this.qrSubscription?.unsubscribe();
   }
 
   getEmptyForm(): any {
@@ -338,6 +376,8 @@ totalDueAmount = 0;
     this.planService.assignMembership(membershipData).subscribe({
       next: (response) => {
         this.saving = false;
+        this.historyCache.delete(memberId);
+        this.financialCache.delete(memberId);
         alert('Member and membership saved successfully!');
         this.closeForm();
         this.loadMembers();
@@ -386,150 +426,253 @@ totalDueAmount = 0;
     this.loadMembers();
   }
 
-  // Open Membership History
-openMembershipHistory(member: any): void {
-  this.selectedHistoryMember = member;
-  this.showHistory = true;
-  this.historyLoading = true;
-  this.historyError = '';
-  this.membershipHistory = [];
-
-  this.planService.getMemberMemberships(member._id).subscribe({
-    next: (response) => {
-      this.membershipHistory = response.memberships || response.data || [];
-      this.historyLoading = false;
-    },
-    error: (error) => {
-      console.error('Membership history error:', error);
-      this.historyError =
-        error.error?.message || 'Unable to load membership history';
-      this.historyLoading = false;
+  openMembershipHistory(member: any, retry = false): void {
+    const memberId = member?._id;
+    if (!memberId) {
+      this.historyError = 'Unable to identify this member.';
+      this.showHistory = true;
+      return;
     }
-  });
-}
 
-// Close Membership History
-closeMembershipHistory(): void {
-  this.showHistory = false;
-  this.selectedHistoryMember = null;
-  this.membershipHistory = [];
-  this.historyError = '';
-}
+    this.selectedHistoryMember = member;
+    this.showHistory = true;
+    this.historyError = '';
 
-// Generate Member QR Code
-async generateQR(member: any): Promise<void> {
-  this.qrLoading = true;
-  this.qrError = '';
-  this.qrImage = '';
-  this.qrMemberName = member.fullName;
-  this.qrMemberPhone = member.phone;
-  this.showQRModal = true;
+    const cached = this.historyCache.get(memberId);
+    if (!retry && cached && Date.now() - cached.loadedAt < 30_000) {
+      this.membershipHistory = cached.records;
+      this.historyLoading = false;
+      return;
+    }
 
-  this.memberService.generateMemberQR(member._id).subscribe({
-    next: async (response: any) => {
-      try {
-        const qrToken = response.qrToken;
+    if (this.historyLoading && this.historyRequestMemberId === memberId) {
+      return;
+    }
 
-        if (!qrToken) {
-          throw new Error('QR token not received');
+    this.historyRequestMemberId = memberId;
+    this.historySubscription?.unsubscribe();
+    this.membershipHistory = [];
+    this.historyLoading = true;
+
+    this.historySubscription = this.planService.getMemberMemberships(memberId)
+      .pipe(
+        timeout({ first: 20_000 }),
+        finalize(() => {
+          if (this.historyRequestMemberId === memberId) {
+            this.historyLoading = false;
+            this.historyRequestMemberId = '';
+            this.changeDetector.markForCheck();
+          }
+        })
+      )
+      .subscribe({
+        next: (response) => {
+          const records = response?.memberships ?? response?.data;
+          if (!Array.isArray(records)) {
+            this.historyError = 'Membership history response was invalid.';
+            return;
+          }
+          this.membershipHistory = records;
+          this.historyCache.set(memberId, { records, loadedAt: Date.now() });
+        },
+        error: (error) => {
+          console.error('Membership history error:', error);
+          this.historyError =
+            error.error?.message ||
+            (error.name === 'TimeoutError'
+              ? 'Loading membership history timed out. Please retry.'
+              : 'Unable to load membership history. Please retry.');
+          this.changeDetector.markForCheck();
         }
+      });
+  }
 
-        this.qrImage = await QRCode.toDataURL(qrToken, {
-          width: 300,
-          margin: 2,
-          errorCorrectionLevel: 'H'
-        });
+  closeMembershipHistory(): void {
+    this.showHistory = false;
+    this.selectedHistoryMember = null;
+    this.historyRequestMemberId = '';
+    this.historySubscription?.unsubscribe();
+    this.historySubscription = undefined;
+    this.historyLoading = false;
+    this.historyError = '';
+  }
 
-        this.qrLoading = false;
-      } catch (error) {
-        console.error('QR generation error:', error);
-        this.qrError = 'Unable to generate QR image.';
-        this.qrLoading = false;
-      }
-    },
-    error: (error: any) => {
-      console.error('QR API error:', error);
-      this.qrError =
-        error.error?.message || 'Unable to generate QR Code.';
-      this.qrLoading = false;
+  generateQR(member: any): void {
+    if (this.qrLoading) {
+      return;
     }
-  });
-}
 
-// Close QR Modal
-closeQRModal(): void {
-  this.showQRModal = false;
-  this.qrImage = '';
-  this.qrError = '';
-}
+    if (!member?._id) {
+      this.qrError = 'Unable to identify this member.';
+      this.showQRModal = true;
+      return;
+    }
 
-// Download QR Code
-downloadQR(): void {
-  if (!this.qrImage) return;
+    this.qrLoading = true;
+    this.qrError = '';
+    this.qrImage = '';
+    this.qrMemberName = member.fullName || 'Member';
+    this.qrMemberPhone = member.phone || '';
+    this.selectedQrMember = member;
+    this.showQRModal = true;
 
-  const link = document.createElement('a');
-  link.href = this.qrImage;
-  link.download = `${this.qrMemberName}-QR.png`;
-  link.click();
-}
+    this.qrSubscription = this.memberService.generateMemberQR(member._id)
+      .pipe(
+        switchMap((response: any) => {
+          if (!response?.success || !response.qrToken) {
+            return throwError(() => new Error(
+              response?.message || 'QR token was not returned by the server.'
+            ));
+          }
 
-openFinancialDetails(member: any): void {
-  this.selectedFinancialMember = member;
-  this.showFinancialDetails = true;
-  this.financialLoading = true;
-  this.financialError = '';
-  this.memberPayments = [];
+          return from(QRCode.toDataURL(response.qrToken, {
+            width: 300,
+            margin: 2,
+            errorCorrectionLevel: 'H'
+          }));
+        }),
+        timeout({ first: 20_000 }),
+        finalize(() => {
+          this.qrLoading = false;
+          this.changeDetector.markForCheck();
+        })
+      )
+      .subscribe({
+        next: (image) => {
+          this.qrImage = image;
+        },
+        error: (error) => {
+          console.error('QR generation error:', error);
+          this.qrError =
+            error.error?.message ||
+            (error.name === 'TimeoutError'
+              ? 'QR generation timed out. Please retry.'
+              : error.message || 'Unable to generate QR Code.');
+          this.changeDetector.markForCheck();
+        }
+      });
+  }
 
-  this.totalPlanAmount = 0;
-  this.totalPaidAmount = 0;
-  this.totalDueAmount = 0;
+  closeQRModal(): void {
+    this.showQRModal = false;
+    this.qrSubscription?.unsubscribe();
+    this.qrSubscription = undefined;
+    this.qrLoading = false;
+    this.qrImage = '';
+    this.qrError = '';
+    this.selectedQrMember = null;
+  }
 
-  this.paymentService.getMemberPayments(member._id).subscribe({
-    next: (response: any) => {
-      this.memberPayments = response.payments || [];
+  downloadQR(): void {
+    if (!this.qrImage) return;
 
-      // Calculate totals from membership history
-      this.planService.getMemberMemberships(member._id).subscribe({
-        next: (membershipResponse: any) => {
-          const memberships = membershipResponse.memberships || [];
+    const link = document.createElement('a');
+    link.href = this.qrImage;
+    link.download = `${this.qrMemberName}-QR.png`;
+    link.click();
+  }
 
+  openFinancialDetails(member: any, retry = false): void {
+    const memberId = member?._id;
+    if (!memberId) {
+      this.financialError = 'Unable to identify this member.';
+      this.showFinancialDetails = true;
+      return;
+    }
+
+    this.selectedFinancialMember = member;
+    this.showFinancialDetails = true;
+    this.financialError = '';
+
+    const cached = this.financialCache.get(memberId);
+    if (!retry && cached && Date.now() - cached.loadedAt < 30_000) {
+      this.memberPayments = cached.payments;
+      this.totalPlanAmount = cached.totalPlanAmount;
+      this.totalPaidAmount = cached.totalPaidAmount;
+      this.totalDueAmount = cached.totalDueAmount;
+      this.financialLoading = false;
+      return;
+    }
+
+    if (this.financialLoading && this.financialRequestMemberId === memberId) {
+      return;
+    }
+
+    this.financialRequestMemberId = memberId;
+    this.financialSubscription?.unsubscribe();
+    this.financialLoading = true;
+    this.memberPayments = [];
+    this.totalPlanAmount = 0;
+    this.totalPaidAmount = 0;
+    this.totalDueAmount = 0;
+
+    forkJoin({
+      paymentResponse: this.paymentService.getMemberPayments(memberId),
+      membershipResponse: this.planService.getMemberMemberships(memberId)
+    })
+      .pipe(
+        timeout({ first: 20_000 }),
+        finalize(() => {
+          if (this.financialRequestMemberId === memberId) {
+            this.financialLoading = false;
+            this.financialRequestMemberId = '';
+            this.changeDetector.markForCheck();
+          }
+        })
+      )
+      .subscribe({
+        next: ({ paymentResponse, membershipResponse }) => {
+          if (!Array.isArray(paymentResponse?.payments) ||
+              !Array.isArray(membershipResponse?.memberships ?? membershipResponse?.data)) {
+            this.financialError = 'Financial details response was invalid.';
+            return;
+          }
+
+          const memberships =
+            membershipResponse.memberships ?? membershipResponse.data;
+          this.memberPayments = paymentResponse.payments;
           this.totalPlanAmount = memberships.reduce(
             (total: number, item: any) =>
               total + Number(item.planPrice || 0), 0
           );
-
           this.totalPaidAmount = memberships.reduce(
             (total: number, item: any) =>
               total + Number(item.paidAmount || 0), 0
           );
-
           this.totalDueAmount = Math.max(
             0,
             this.totalPlanAmount - this.totalPaidAmount
           );
-
-          this.financialLoading = false;
+          this.financialCache.set(memberId, {
+            payments: this.memberPayments,
+            totalPlanAmount: this.totalPlanAmount,
+            totalPaidAmount: this.totalPaidAmount,
+            totalDueAmount: this.totalDueAmount,
+            loadedAt: Date.now()
+          });
         },
-        error: () => {
-          this.financialError = 'Unable to load membership financial details.';
-          this.financialLoading = false;
+        error: (error) => {
+          console.error('Financial details error:', error);
+          this.financialError =
+            error.error?.message ||
+            (error.name === 'TimeoutError'
+              ? 'Loading financial details timed out. Please retry.'
+              : 'Unable to load financial details. Please retry.');
+          this.changeDetector.markForCheck();
         }
       });
-    },
-    error: (error: any) => {
-      this.financialError =
-        error.error?.message || 'Unable to load payment history.';
-      this.financialLoading = false;
-    }
-  });
-}
+  }
 
-closeFinancialDetails(): void {
-  this.showFinancialDetails = false;
-  this.selectedFinancialMember = null;
-  this.memberPayments = [];
-  this.financialError = '';
-}
+  closeFinancialDetails(): void {
+    this.showFinancialDetails = false;
+    this.selectedFinancialMember = null;
+    this.financialRequestMemberId = '';
+    this.financialSubscription?.unsubscribe();
+    this.financialSubscription = undefined;
+    this.financialLoading = false;
+    this.memberPayments = [];
+    this.financialError = '';
+  }
 
 
 printReceipt(payment: any): void {

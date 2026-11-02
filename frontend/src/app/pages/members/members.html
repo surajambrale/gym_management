@@ -370,6 +370,10 @@
             <!-- Error -->
             <div class="history-message error" *ngIf="!historyLoading && historyError">
                 {{ historyError }}
+                <button type="button" class="history-retry-btn"
+                    (click)="openMembershipHistory(selectedHistoryMember, true)">
+                    Retry
+                </button>
             </div>
 
             <!-- Empty History -->
@@ -475,6 +479,14 @@
         {{ qrError }}
       </p>
 
+      <button
+        type="button"
+        class="history-retry-btn"
+        *ngIf="qrError && !qrLoading && selectedQrMember"
+        (click)="generateQR(selectedQrMember)">
+        Retry
+      </button>
+
       <img
         *ngIf="qrImage"
         [src]="qrImage"
@@ -521,6 +533,10 @@
 
             <div class="history-message error" *ngIf="!financialLoading && financialError">
                 {{ financialError }}
+                <button type="button" class="history-retry-btn"
+                    (click)="openFinancialDetails(selectedFinancialMember, true)">
+                    Retry
+                </button>
             </div>
 
             <ng-container *ngIf="!financialLoading && !financialError">

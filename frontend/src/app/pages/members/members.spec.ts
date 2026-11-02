@@ -1,21 +1,182 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
+import { vi } from 'vitest';
+
 import { Members } from './members';
+import { MemberService } from '../../services/member';
+import { MembershipPlanService } from '../../services/membership-plan';
+import { PaymentService } from '../../services/payment';
 
 describe('Members', () => {
   let component: Members;
   let fixture: ComponentFixture<Members>;
+  let memberService: {
+    getMembers: ReturnType<typeof vi.fn>;
+    generateMemberQR: ReturnType<typeof vi.fn>;
+  };
+  let planService: {
+    getPlans: ReturnType<typeof vi.fn>;
+    getMemberMemberships: ReturnType<typeof vi.fn>;
+  };
+  let paymentService: {
+    getMemberPayments: ReturnType<typeof vi.fn>;
+  };
+
+  const member = {
+    _id: 'member-123',
+    fullName: 'Test Member',
+    phone: '1234567890'
+  };
 
   beforeEach(async () => {
+    memberService = {
+      getMembers: vi.fn().mockReturnValue(of({
+        members: [],
+        pagination: { totalMembers: 0, totalPages: 0 }
+      })),
+      generateMemberQR: vi.fn()
+    };
+    planService = {
+      getPlans: vi.fn().mockReturnValue(of({ plans: [] })),
+      getMemberMemberships: vi.fn()
+    };
+    paymentService = {
+      getMemberPayments: vi.fn()
+    };
+
     await TestBed.configureTestingModule({
       imports: [Members],
+      providers: [
+        { provide: MemberService, useValue: memberService },
+        { provide: MembershipPlanService, useValue: planService },
+        { provide: PaymentService, useValue: paymentService }
+      ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(Members);
     component = fixture.componentInstance;
-    await fixture.whenStable();
+    fixture.detectChanges();
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
+  it('loads membership history once and reuses a recent result', () => {
+    const records = [{ _id: 'membership-1', planPrice: 100 }];
+    planService.getMemberMemberships.mockReturnValue(of({
+      success: true,
+      memberships: records
+    }));
+
+    component.openMembershipHistory(member);
+    expect(component.membershipHistory).toEqual(records);
+    expect(component.historyLoading).toBe(false);
+
+    component.closeMembershipHistory();
+    component.openMembershipHistory(member);
+
+    expect(planService.getMemberMemberships).toHaveBeenCalledTimes(1);
+    expect(component.membershipHistory).toEqual(records);
+  });
+
+  it('shows an empty state for members without membership history', () => {
+    planService.getMemberMemberships.mockReturnValue(of({
+      success: true,
+      memberships: []
+    }));
+
+    component.openMembershipHistory(member);
+
+    expect(component.historyLoading).toBe(false);
+    expect(component.historyError).toBe('');
+    expect(component.membershipHistory).toEqual([]);
+  });
+
+  it('resets membership history loading and exposes API errors', () => {
+    planService.getMemberMemberships.mockReturnValue(
+      throwError(() => ({ error: { message: 'History request failed' } }))
+    );
+
+    component.openMembershipHistory(member);
+
+    expect(component.historyLoading).toBe(false);
+    expect(component.historyError).toBe('History request failed');
+  });
+
+  it('loads financial endpoints in parallel and caches the result briefly', () => {
+    const payments = [{ _id: 'payment-1', amount: 25 }];
+    const memberships = [
+      { planPrice: 100, paidAmount: 25 },
+      { planPrice: 50, paidAmount: 50 }
+    ];
+    paymentService.getMemberPayments.mockReturnValue(of({ payments }));
+    planService.getMemberMemberships.mockReturnValue(of({ memberships }));
+
+    component.openFinancialDetails(member);
+
+    expect(component.financialLoading).toBe(false);
+    expect(component.memberPayments).toEqual(payments);
+    expect(component.totalPlanAmount).toBe(150);
+    expect(component.totalPaidAmount).toBe(75);
+    expect(component.totalDueAmount).toBe(75);
+
+    component.closeFinancialDetails();
+    component.openFinancialDetails(member);
+
+    expect(paymentService.getMemberPayments).toHaveBeenCalledTimes(1);
+    expect(planService.getMemberMemberships).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows zero financial totals when the member has no records', () => {
+    paymentService.getMemberPayments.mockReturnValue(of({ payments: [] }));
+    planService.getMemberMemberships.mockReturnValue(of({ memberships: [] }));
+
+    component.openFinancialDetails(member);
+
+    expect(component.financialLoading).toBe(false);
+    expect(component.financialError).toBe('');
+    expect(component.memberPayments).toEqual([]);
+    expect(component.totalPlanAmount).toBe(0);
+    expect(component.totalPaidAmount).toBe(0);
+    expect(component.totalDueAmount).toBe(0);
+  });
+
+  it('resets financial loading and shows an error when an API fails', () => {
+    paymentService.getMemberPayments.mockReturnValue(
+      throwError(() => ({ error: { message: 'Payments request failed' } }))
+    );
+    planService.getMemberMemberships.mockReturnValue(of({ memberships: [] }));
+
+    component.openFinancialDetails(member);
+
+    expect(component.financialLoading).toBe(false);
+    expect(component.financialError).toBe('Payments request failed');
+  });
+
+  it('generates and displays a QR image for the selected member', async () => {
+    memberService.generateMemberQR.mockReturnValue(of({
+      success: true,
+      qrToken: 'opaque-random-member-token'
+    }));
+
+    component.generateQR(member);
+    await vi.waitFor(() => {
+      expect(component.qrLoading).toBe(false);
+    });
+
+    expect(memberService.generateMemberQR).toHaveBeenCalledWith(member._id);
+    expect(component.showQRModal).toBe(true);
+    expect(component.qrLoading).toBe(false);
+    expect(component.qrImage).toMatch(/^data:image\/png;base64,/);
+    expect(component.qrError).toBe('');
+  });
+
+  it('shows QR API errors and ends the loading state', () => {
+    memberService.generateMemberQR.mockReturnValue(
+      throwError(() => ({ error: { message: 'QR request failed' } }))
+    );
+
+    component.generateQR(member);
+
+    expect(component.showQRModal).toBe(true);
+    expect(component.qrLoading).toBe(false);
+    expect(component.qrError).toBe('QR request failed');
   });
 });
