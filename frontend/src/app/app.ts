@@ -1,6 +1,9 @@
+
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterOutlet } from '@angular/router';
+import { finalize } from 'rxjs';
+
 import { AuthService } from './services/auth';
 import { DashboardService } from './services/dashboard';
 
@@ -8,6 +11,7 @@ import { Members } from './pages/members/members';
 import { MembershipPlans } from './pages/membership-plans/membership-plans';
 import { Attendance } from './pages/attendance/attendance';
 import { Payments } from './pages/payments/payments';
+
 import { environment } from '../environments/environment';
 
 @Component({
@@ -25,8 +29,27 @@ import { environment } from '../environments/environment';
   styleUrl: './app.scss'
 })
 export class App implements OnInit {
+
   readonly appName = environment.appName;
   readonly appVersion = environment.appVersion;
+
+  selectedMenu = 'Dashboard';
+  mobileMenuOpen = false;
+
+  isAuthenticated = false;
+  sessionChecking = true;
+
+  businessName = environment.appName;
+  ownerName = 'Admin';
+
+  stats: any[] = [];
+  recentMembers: any[] = [];
+
+  dashboardLoading = false;
+  dashboardError = '';
+  todayAttendance = 0;
+
+  private sessionVerificationStarted = false;
 
   constructor(
     private router: Router,
@@ -38,10 +61,12 @@ export class App implements OnInit {
     this.verifySession();
   }
 
+  // SESSION VERIFICATION
   verifySession(): void {
+
     const currentUrl = this.router.url;
 
-    // Login/Register pages par profile verification nahi karni
+    // Login and registration pages
     if (
       currentUrl.startsWith('/login') ||
       currentUrl.startsWith('/register')
@@ -51,6 +76,7 @@ export class App implements OnInit {
       return;
     }
 
+    // Check token
     if (!this.authService.isLoggedIn()) {
       this.sessionChecking = false;
       this.isAuthenticated = false;
@@ -58,128 +84,141 @@ export class App implements OnInit {
       return;
     }
 
-    this.sessionChecking = true;
-
-    this.authService.getProfile().subscribe({
-      next: (response) => {
-        if (response.success && response.owner && response.business) {
-          this.isAuthenticated = true;
-          this.loadDashboardData();
-
-          this.ownerName = response.owner.name || 'Owner';
-          this.businessName =
-            response.business.businessName || this.appName;
-
-          localStorage.setItem('owner', JSON.stringify(response.owner));
-          localStorage.setItem('business', JSON.stringify(response.business));
-
-          // Direct URL /members par page refresh hone par bhi
-          // Members module dashboard ke andar open hoga.
-          if (currentUrl.startsWith('/members')) {
-            this.selectedMenu = 'Members';
-          } else if (currentUrl.startsWith('/dashboard')) {
-            this.selectedMenu = 'Dashboard';
-          }
-        } else {
-          this.authService.logout();
-          this.isAuthenticated = false;
-          this.router.navigate(['/login']);
-        }
-
-        this.sessionChecking = false;
-      },
-
-      error: (error) => {
-        console.error('Session verification failed:', error);
-
-        this.authService.logout();
-        this.isAuthenticated = false;
-        this.sessionChecking = false;
-
-        this.router.navigate(['/login']);
-      }
-    });
-  }
-
-  logout(): void {
-    this.authService.logout();
-    this.isAuthenticated = false;
-    this.ownerName = 'Admin';
-    this.selectedMenu = 'Dashboard';
-    this.router.navigate(['/login']);
-  }
-
-  get isAuthRoute(): boolean {
-    return this.router.url.startsWith('/register') ||
-      this.router.url.startsWith('/login');
-  }
-
-  selectedMenu = 'Dashboard';
-  mobileMenuOpen = false;
-  isAuthenticated = false;
-  sessionChecking = true;
-  businessName = environment.appName;
-  ownerName = 'Admin';
-
-  menuGroups = [
-    {
-      title: 'MAIN MENU',
-      items: [
-        { name: 'Dashboard', icon: '▦' },
-        { name: 'Members', icon: '♙' },
-        { name: 'Membership Plans', icon: '▤' },
-        { name: 'Attendance', icon: '◷' },
-        { name: 'Payments & Fees', icon: '₹' }
-      ]
-    },
-    {
-      title: 'MANAGEMENT',
-      items: [
-        { name: 'Trainers & Staff', icon: '♧' },
-        { name: 'Dance Batches', icon: '♫' },
-        { name: 'Reports & Analytics', icon: '▥' }
-      ]
-    },
-    {
-      title: 'SYSTEM',
-      items: [
-        { name: 'Settings', icon: '⚙' },
-        { name: 'Subscription', icon: '◇' },
-        { name: 'Help & Support', icon: '?' }
-      ]
-    }
-  ];
-
-  stats: any[] = [];
-  recentMembers: any[] = [];
-
-  dashboardLoading = false;
-  dashboardError = '';
-  todayAttendance = 0;
-
-  selectMenu(name: string): void {
-    this.selectedMenu = name;
-    this.mobileMenuOpen = false;
-
-    // Dashboard modules are displayed inline.
-    // Only authentication pages use router navigation.
-    if (name === 'Dashboard' || name === 'Members') {
+    // Prevent duplicate verification
+    if (this.sessionVerificationStarted) {
       return;
     }
 
+    this.sessionVerificationStarted = true;
+    this.sessionChecking = true;
+
+    this.authService.getProfile()
+      .pipe(
+        finalize(() => {
+          this.sessionChecking = false;
+          this.sessionVerificationStarted = false;
+        })
+      )
+      .subscribe({
+
+        next: (response) => {
+
+          console.log('PROFILE RESPONSE:', response);
+
+          if (
+            response?.success === true &&
+            response?.owner &&
+            response?.business
+          ) {
+
+            // Authentication successful
+            this.isAuthenticated = true;
+
+            this.ownerName = response.owner.name || 'Owner';
+
+            this.businessName =
+              response.business.businessName || this.appName;
+
+            // Save latest profile
+            localStorage.setItem(
+              'owner',
+              JSON.stringify(response.owner)
+            );
+
+            localStorage.setItem(
+              'business',
+              JSON.stringify(response.business)
+            );
+
+            // Restore selected inline module
+            if (currentUrl.startsWith('/members')) {
+              this.selectedMenu = 'Members';
+            } else {
+              this.selectedMenu = 'Dashboard';
+            }
+
+            console.log('SESSION VERIFIED SUCCESSFULLY');
+
+            // Load dashboard independently
+            this.loadDashboardData();
+
+          } else {
+
+            console.error('Invalid profile response');
+
+            this.authService.logout();
+            this.isAuthenticated = false;
+
+            this.router.navigate(['/login']);
+          }
+        },
+
+        error: (error) => {
+
+          console.error('Session verification failed:', error);
+
+          this.authService.logout();
+          this.isAuthenticated = false;
+
+          this.router.navigate(['/login']);
+        }
+
+      });
+  }
+
+  // AUTH ROUTE CHECK
+  get isAuthRoute(): boolean {
+    return (
+      this.router.url.startsWith('/register') ||
+      this.router.url.startsWith('/login')
+    );
+  }
+
+  // LOGOUT
+  logout(): void {
+
+    this.authService.logout();
+
+    this.isAuthenticated = false;
+    this.sessionChecking = false;
+
+    this.ownerName = 'Admin';
+    this.businessName = this.appName;
+    this.selectedMenu = 'Dashboard';
+
+    this.mobileMenuOpen = false;
+
+    this.router.navigate(['/login']);
+  }
+
+  // SIDEBAR MENU
+  selectMenu(name: string): void {
+
+    this.selectedMenu = name;
+    this.mobileMenuOpen = false;
+
+    // All implemented modules are inline
     if (
+      name === 'Dashboard' ||
+      name === 'Members' ||
       name === 'Membership Plans' ||
       name === 'Attendance' ||
       name === 'Payments & Fees'
     ) {
+      if (name === 'Dashboard') {
+        this.loadDashboardData();
+      }
+
       return;
     }
   }
 
+  // MOBILE MENU
   toggleMobileMenu(): void {
     this.mobileMenuOpen = !this.mobileMenuOpen;
   }
 
+  // CURRENT DATE
   get currentDate(): string {
     return new Intl.DateTimeFormat('en-IN', {
       day: '2-digit',
@@ -188,20 +227,37 @@ export class App implements OnInit {
     }).format(new Date());
   }
 
+  // DASHBOARD API
   loadDashboardData(): void {
+
     this.dashboardLoading = true;
     this.dashboardError = '';
 
-    this.dashboardService.getDashboardStats().subscribe({
-      next: (response) => {
-        if (response.success) {
+    this.dashboardService.getDashboardStats()
+      .pipe(
+        finalize(() => {
+          this.dashboardLoading = false;
+        })
+      )
+      .subscribe({
+
+        next: (response) => {
+
+          console.log('DASHBOARD RESPONSE:', response);
+
+          if (!response?.success || !response?.stats) {
+            this.dashboardError = 'Unable to load dashboard data.';
+            return;
+          }
+
           const data = response.stats;
-          this.todayAttendance = data.todayAttendance;
+
+          this.todayAttendance = data.todayAttendance ?? 0;
 
           this.stats = [
             {
               title: 'Total Members',
-              value: data.totalMembers.toLocaleString('en-IN'),
+              value: (data.totalMembers ?? 0).toLocaleString('en-IN'),
               change: '',
               description: 'All registered members',
               icon: '♙',
@@ -209,7 +265,7 @@ export class App implements OnInit {
             },
             {
               title: 'Active Members',
-              value: data.activeMembers.toLocaleString('en-IN'),
+              value: (data.activeMembers ?? 0).toLocaleString('en-IN'),
               change: '',
               description: 'Currently active',
               icon: '✓',
@@ -217,7 +273,7 @@ export class App implements OnInit {
             },
             {
               title: 'Total Collected',
-              value: '₹' + data.totalCollected.toLocaleString('en-IN'),
+              value: '₹' + (data.totalCollected ?? 0).toLocaleString('en-IN'),
               change: '',
               description: 'Membership collection',
               icon: '₹',
@@ -225,7 +281,7 @@ export class App implements OnInit {
             },
             {
               title: 'Pending Fees',
-              value: '₹' + data.totalPending.toLocaleString('en-IN'),
+              value: '₹' + (data.totalPending ?? 0).toLocaleString('en-IN'),
               change: '',
               description: 'Remaining membership fees',
               icon: '◷',
@@ -233,25 +289,28 @@ export class App implements OnInit {
             }
           ];
 
-          this.recentMembers = (response.recentMembers || []).map((member: any) => ({
-            id: member._id.slice(-6).toUpperCase(),
-            name: member.fullName,
-            phone: member.phone,
-            plan: '-',
-            joining: new Date(member.joiningDate || member.createdAt)
-              .toLocaleDateString('en-IN'),
-            status: member.status
-          }));
+          this.recentMembers = (response.recentMembers || []).map(
+            (member: any) => ({
+              id: member._id?.slice(-6).toUpperCase() || '-',
+              name: member.fullName || 'Member',
+              phone: member.phone || '-',
+              plan: '-',
+              joining: new Date(
+                member.joiningDate || member.createdAt
+              ).toLocaleDateString('en-IN'),
+              status: member.status || 'Active'
+            })
+          );
+        },
+
+        error: (error) => {
+
+          console.error('Dashboard API Error:', error);
+
+          this.dashboardError =
+            'Unable to load dashboard data. Please try again.';
         }
 
-        this.dashboardLoading = false;
-      },
-
-      error: (error) => {
-        console.error('Dashboard API Error:', error);
-        this.dashboardError = 'Unable to load dashboard data.';
-        this.dashboardLoading = false;
-      }
-    });
+      });
   }
 }
