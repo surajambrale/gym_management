@@ -1,5 +1,5 @@
 
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
 import { filter, finalize, Subscription } from 'rxjs';
@@ -84,7 +84,8 @@ export class App implements OnInit, OnDestroy {
   constructor(
     private router: Router,
     private authService: AuthService,
-    private dashboardService: DashboardService
+    private dashboardService: DashboardService,
+    private changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -146,6 +147,7 @@ export class App implements OnInit, OnDestroy {
         finalize(() => {
           this.sessionChecking = false;
           this.sessionVerificationStarted = false;
+          this.changeDetector.markForCheck();
         })
       )
       .subscribe({
@@ -269,6 +271,7 @@ export class App implements OnInit, OnDestroy {
       .pipe(
         finalize(() => {
           this.dashboardLoading = false;
+          this.changeDetector.markForCheck();
         })
       )
       .subscribe({
