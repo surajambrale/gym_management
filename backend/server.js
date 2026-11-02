@@ -1,6 +1,8 @@
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+
 const config = require('./config/env');
 const connectDB = require('./config/db');
 
@@ -13,17 +15,21 @@ dns.setServers([
 
 const app = express();
 
+// Security Middleware
 app.use(helmet());
 
+// CORS Configuration
 app.use(cors({
   origin: config.allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.use(express.json());
+
+// API Routes
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
-// Auth Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/members', require('./routes/memberRoutes'));
@@ -35,6 +41,7 @@ app.use(
   require('./routes/memberMembershipRoutes')
 );
 
+// Root Route
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -42,6 +49,7 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health Check
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -50,12 +58,18 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Start Server
 const startServer = async () => {
-  await connectDB();
+  try {
+    await connectDB();
 
-  app.listen(config.port, () => {
-    console.log(`Server running on port ${config.port}`);
-  });
+    app.listen(config.port, () => {
+      console.log(`Server running on port ${config.port}`);
+    });
+  } catch (error) {
+    console.error('Server startup failed:', error.message);
+    process.exit(1);
+  }
 };
 
 startServer();
