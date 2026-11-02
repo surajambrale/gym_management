@@ -23,7 +23,10 @@ export class DashboardService {
   getDashboardStats(): Observable<any> {
     return this.http.get(
       `${this.apiUrl}/stats`,
-      { headers: this.getAuthHeaders() }
+      {
+        params: { _cacheBust: Date.now() },
+        headers: this.getAuthHeaders()
+      }
     );
   }
 }

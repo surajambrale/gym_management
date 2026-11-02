@@ -80,6 +80,7 @@ export class AuthService {
   return this.http.get<any>(
     `${this.apiUrl}/profile`,
     {
+      params: { _cacheBust: Date.now() },
       headers: {
         Authorization: `Bearer ${token}`
       }
