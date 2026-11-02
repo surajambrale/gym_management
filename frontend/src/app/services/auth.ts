@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, tap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -74,7 +74,7 @@ export class AuthService {
   const token = localStorage.getItem('token');
 
   if (!token) {
-    throw new Error('Authentication token not found');
+    return throwError(() => new Error('Authentication token not found'));
   }
 
   return this.http.get<any>(

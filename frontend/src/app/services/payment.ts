@@ -1,6 +1,6 @@
 
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -22,9 +22,14 @@ export class PaymentService {
   }
 
   // Get all business payments
-  getPayments(): Observable<any> {
+  getPayments(page = 1, limit = 25): Observable<any> {
+    const params = new HttpParams()
+      .set('page', page)
+      .set('limit', limit);
+
     return this.http.get(this.apiUrl, {
-      headers: this.getAuthHeaders()
+      headers: this.getAuthHeaders(),
+      params
     });
   }
 

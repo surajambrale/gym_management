@@ -9,7 +9,7 @@
     </div>
 
     <div class="heading-actions">
-      <button class="secondary-btn" (click)="loadPayments()">
+      <button class="secondary-btn" (click)="loadPayments()" [disabled]="loading">
         ↻ Refresh
       </button>
 
@@ -36,7 +36,7 @@
       <div class="stat-icon collection-icon">₹</div>
       <div>
         <span>Total Collection</span>
-        <h3>₹{{ totalCollection | number:'1.0-0' }}</h3>
+        <h3>{{ paymentSummaryLoaded ? '₹' + (totalCollection | number:'1.0-0') : '—' }}</h3>
         <small>Successful payments</small>
       </div>
     </div>
@@ -45,7 +45,7 @@
       <div class="stat-icon transaction-icon">▤</div>
       <div>
         <span>Total Transactions</span>
-        <h3>{{ totalTransactions }}</h3>
+        <h3>{{ paymentSummaryLoaded ? totalTransactions : '—' }}</h3>
         <small>All payment records</small>
       </div>
     </div>
@@ -54,7 +54,7 @@
       <div class="stat-icon pending-icon">◷</div>
       <div>
         <span>Pending Transactions</span>
-        <h3>{{ pendingTransactions }}</h3>
+        <h3>{{ paymentSummaryLoaded ? pendingTransactions : '—' }}</h3>
         <small>Awaiting confirmation</small>
       </div>
     </div>
@@ -237,11 +237,12 @@
       <div>
         <h3>Payment History</h3>
         <p>All transactions recorded for your business.</p>
+        <small *ngIf="loading && payments.length > 0">Updating payment records...</small>
       </div>
     </div>
 
     <!-- Loading -->
-    <div class="loading-state" *ngIf="loading">
+    <div class="loading-state" *ngIf="loading && payments.length === 0">
       <p>Loading payment records...</p>
     </div>
 
@@ -252,7 +253,7 @@
     </div>
 
     <!-- Table -->
-    <div class="table-wrapper" *ngIf="!loading && !errorMessage">
+    <div class="table-wrapper" *ngIf="!errorMessage">
 
       <table>
         <thead>
@@ -306,7 +307,7 @@
 
           </tr>
 
-          <tr *ngIf="payments.length === 0">
+          <tr *ngIf="!loading && payments.length === 0">
             <td colspan="7" class="empty-state">
               <div class="empty-icon">₹</div>
               <strong>No payment records found</strong>
@@ -317,6 +318,16 @@
         </tbody>
       </table>
 
+    </div>
+
+    <div class="payment-pagination" *ngIf="!errorMessage && totalPages > 1">
+      <span>Page {{ currentPage }} of {{ totalPages }} ({{ totalPayments }} payments)</span>
+      <div>
+        <button class="secondary-btn" [disabled]="currentPage === 1 || loading"
+          (click)="changePage(currentPage - 1)">Previous</button>
+        <button class="secondary-btn" [disabled]="currentPage >= totalPages || loading"
+          (click)="changePage(currentPage + 1)">Next</button>
+      </div>
     </div>
 
   </div>

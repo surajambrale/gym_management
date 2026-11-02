@@ -1,7 +1,8 @@
 
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 
 import { PaymentService } from '../../services/payment';
 import { MemberService } from '../../services/member';
@@ -15,12 +16,25 @@ import { environment } from '../../../environments/environment';
   templateUrl: './payments.html',
   styleUrl: './payments.scss'
 })
-export class Payments implements OnInit {
+export class Payments implements OnInit, OnChanges {
   readonly appName = environment.appName;
+  @Input() active = false;
 
   payments: any[] = [];
   members: any[] = [];
   memberships: any[] = [];
+  currentPage = 1;
+  readonly pageLimit = 25;
+  totalPayments = 0;
+  totalPages = 0;
+  paymentSummary = {
+    totalTransactions: 0,
+    totalCollection: 0,
+    pendingTransactions: 0
+  };
+  paymentSummaryLoaded = false;
+  private queuedPaymentPage?: number;
+  private lastLoadedAt = 0;
 
   loading = false;
   membersLoading = false;
@@ -55,29 +69,86 @@ export class Payments implements OnInit {
     this.loadMembers();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (
+      changes['active'] &&
+      !changes['active'].firstChange &&
+      this.active &&
+      (!this.lastLoadedAt || Date.now() - this.lastLoadedAt >= 60_000)
+    ) {
+      this.loadPayments();
+      if (!this.membersLoading) {
+        this.loadMembers();
+      }
+    }
+  }
+
   // Load payment history
-  loadPayments(): void {
+  loadPayments(page = this.currentPage): void {
+    if (this.loading) {
+      this.queuedPaymentPage = page;
+      return;
+    }
+
+    this.currentPage = page;
     this.loading = true;
     this.errorMessage = '';
 
-    this.paymentService.getPayments().subscribe({
+    this.paymentService.getPayments(page, this.pageLimit)
+      .pipe(finalize(() => {
+        this.loading = false;
+        const queuedPage = this.queuedPaymentPage;
+        this.queuedPaymentPage = undefined;
+
+        if (queuedPage !== undefined) {
+          this.loadPayments(queuedPage);
+        }
+      }))
+      .subscribe({
       next: (response) => {
         this.payments = response.payments || [];
-        this.loading = false;
+        if (response.summary) {
+          this.paymentSummary = response.summary;
+        } else if (response.pagination) {
+          this.errorMessage = 'Payment summary is unavailable. Please retry.';
+          return;
+        } else {
+          this.paymentSummary = {
+            totalTransactions: response.count ?? this.payments.length,
+            totalCollection: this.payments
+              .filter(payment => payment.status === 'Success')
+              .reduce(
+                (total, payment) => total + Number(payment.amount || 0),
+                0
+              ),
+            pendingTransactions: this.payments.filter(
+              payment => payment.status === 'Pending'
+            ).length
+          };
+        }
+        this.paymentSummaryLoaded = true;
+        this.totalPayments =
+          response.pagination?.totalPayments ?? response.count ?? 0;
+        this.totalPages = response.pagination?.totalPages ?? 1;
+        this.currentPage = response.pagination?.currentPage ?? 1;
+        this.lastLoadedAt = Date.now();
       },
       error: (error) => {
         console.error('Payments loading error:', error);
         this.errorMessage = error.error?.message || 'Unable to load payments.';
-        this.loading = false;
       }
     });
   }
 
   // Load active members
   loadMembers(): void {
+    if (this.membersLoading) {
+      return;
+    }
+
     this.membersLoading = true;
 
-    this.memberService.getMembers('', 'Active', 1, 1000).subscribe({
+    this.memberService.getMembers('', 'Active', 1, 100).subscribe({
       next: (response) => {
         this.members = response.members || [];
         this.membersLoading = false;
@@ -171,6 +242,10 @@ export class Payments implements OnInit {
 
   // Save payment
   submitPayment(): void {
+    if (this.savingPayment) {
+      return;
+    }
+
     this.errorMessage = '';
     this.successMessage = '';
 
@@ -217,10 +292,7 @@ export class Payments implements OnInit {
           this.successMessage = 'Payment recorded successfully!';
 
           this.closePaymentForm();
-          this.loadPayments();
-
-          // Refresh membership balance
-          this.onMemberRefresh(this.selectedMemberId);
+          this.loadPayments(1);
         }
       },
       error: (error) => {
@@ -245,41 +317,24 @@ export class Payments implements OnInit {
     };
   }
 
-  // Refresh membership list after payment
-  onMemberRefresh(memberId: string): void {
-    if (!memberId) {
-      return;
-    }
-
-    this.membershipPlanService
-      .getMemberMemberships(memberId)
-      .subscribe({
-        next: () => {
-          // Membership data will refresh next time form is opened.
-        },
-        error: (error) => {
-          console.error('Membership refresh error:', error);
-        }
-      });
-  }
-
   get totalCollection(): number {
-    return this.payments
-      .filter(payment => payment.status === 'Success')
-      .reduce(
-        (total, payment) => total + Number(payment.amount || 0),
-        0
-      );
+    return this.paymentSummary.totalCollection;
   }
 
   get totalTransactions(): number {
-    return this.payments.length;
+    return this.paymentSummary.totalTransactions;
   }
 
   get pendingTransactions(): number {
-    return this.payments.filter(
-      payment => payment.status === 'Pending'
-    ).length;
+    return this.paymentSummary.pendingTransactions;
+  }
+
+  changePage(page: number): void {
+    if (page < 1 || page > this.totalPages || this.loading) {
+      return;
+    }
+
+    this.loadPayments(page);
   }
 
   formatDate(date: string): string {

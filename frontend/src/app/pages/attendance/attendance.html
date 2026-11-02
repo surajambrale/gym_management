@@ -148,20 +148,19 @@
 
     <div>
       <span>Total Present</span>
-      <h2>{{ attendanceList.length }}</h2>
+      <h2>{{ attendanceLoaded ? attendanceList.length : '—' }}</h2>
     </div>
 
     <div>
       <span>Currently Checked In</span>
-      <h2>{{ attendanceList.filter(isCheckedIn).length }}</h2>
+      <h2>{{ attendanceLoaded ? checkedInCount : '—' }}</h2>
     </div>
 
     <div>
       <span>Checked Out</span>
       <h2>
         {{
-          attendanceList.length -
-          attendanceList.filter(isCheckedIn).length
+          attendanceLoaded ? attendanceList.length - checkedInCount : '—'
         }}
       </h2>
     </div>
@@ -187,10 +186,6 @@
 
     </div>
 
-    <div class="loading" *ngIf="loadingAttendance">
-      Loading attendance records...
-    </div>
-
     <div
       class="empty-state"
       *ngIf="!loadingAttendance && attendanceList.length === 0"
@@ -201,7 +196,7 @@
 
     <div
       class="table-responsive"
-      *ngIf="!loadingAttendance && attendanceList.length > 0"
+      *ngIf="loadingAttendance || attendanceList.length > 0"
     >
 
       <table>
@@ -219,6 +214,10 @@
         </thead>
 
         <tbody>
+
+          <tr *ngIf="loadingAttendance">
+            <td colspan="7" class="loading">Loading attendance records...</td>
+          </tr>
 
           <tr *ngFor="let record of attendanceList">
 

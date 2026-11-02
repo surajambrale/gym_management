@@ -776,6 +776,76 @@ td {
   margin-bottom: 23px;
 }
 
+.module-loading-skeleton {
+  display: grid;
+  gap: 16px;
+  padding: 30px 32px;
+}
+
+.skeleton-line,
+.skeleton-card {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #eceef3 25%, #f7f8fa 50%, #eceef3 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line {
+  width: 35%;
+  height: 14px;
+}
+
+.skeleton-value {
+  width: 48%;
+  height: 28px;
+  margin: 18px 0;
+  border-radius: 6px;
+  background: #eceef3;
+}
+
+.dashboard-skeleton-stats {
+  display: contents;
+}
+
+.dashboard-skeleton-stats .stat-card {
+  min-height: 135px;
+}
+
+.dashboard-panel-skeleton {
+  min-height: 250px;
+}
+
+.dashboard-panel-skeleton .skeleton-card {
+  min-height: 110px;
+}
+
+.dashboard-table-skeleton {
+  height: 44px;
+  padding: 14px 0;
+  color: #858895;
+}
+
+.skeleton-line.skeleton-title {
+  width: 24%;
+  height: 28px;
+}
+
+.skeleton-card {
+  width: 100%;
+  min-height: 180px;
+}
+
+.module-load-error {
+  margin: 30px 32px;
+  color: #c62828;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
 /* MOBILE RESPONSIVE */
 
 .mobile-overlay {

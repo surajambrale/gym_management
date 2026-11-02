@@ -5,8 +5,7 @@ const memberSchema = new mongoose.Schema(
         tenantId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Business',
-            required: true,
-            index: true
+            required: true
         },
 
         businessId: {
@@ -94,5 +93,7 @@ memberSchema.index(
     { tenantId: 1, phone: 1 },
     { unique: true }
 );
+memberSchema.index({ tenantId: 1, createdAt: -1 });
+memberSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Member', memberSchema);

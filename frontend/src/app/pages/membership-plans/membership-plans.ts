@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MembershipPlanService } from '../../services/membership-plan';
@@ -10,7 +10,8 @@ import { MembershipPlanService } from '../../services/membership-plan';
   templateUrl: './membership-plans.html',
   styleUrl: './membership-plans.scss'
 })
-export class MembershipPlans implements OnInit {
+export class MembershipPlans implements OnInit, OnChanges {
+  @Input() active = false;
 
   plans: any[] = [];
   filteredPlans: any[] = [];
@@ -19,6 +20,9 @@ export class MembershipPlans implements OnInit {
   statusFilter = '';
 
   loading = false;
+  saving = false;
+  deletingPlanId = '';
+  private lastLoadedAt = 0;
   showForm = false;
   isEditMode = false;
 
@@ -30,6 +34,17 @@ export class MembershipPlans implements OnInit {
 
   ngOnInit(): void {
     this.loadPlans();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (
+      changes['active'] &&
+      !changes['active'].firstChange &&
+      this.active &&
+      (!this.lastLoadedAt || Date.now() - this.lastLoadedAt >= 60_000)
+    ) {
+      this.loadPlans();
+    }
   }
 
   getEmptyForm(): any {
@@ -45,12 +60,17 @@ export class MembershipPlans implements OnInit {
   }
 
   loadPlans(): void {
+    if (this.loading) {
+      return;
+    }
+
     this.loading = true;
 
     this.planService.getPlans().subscribe({
       next: (response) => {
         this.plans = response.plans || [];
         this.filterPlans();
+        this.lastLoadedAt = Date.now();
         this.loading = false;
       },
       error: (error) => {
@@ -111,6 +131,10 @@ export class MembershipPlans implements OnInit {
   }
 
   savePlan(): void {
+    if (this.saving) {
+      return;
+    }
+
     if (
       !this.planForm.planName.trim() ||
       !this.planForm.duration ||
@@ -129,31 +153,41 @@ export class MembershipPlans implements OnInit {
       ? this.planService.updatePlan(this.selectedPlanId, this.planForm)
       : this.planService.addPlan(this.planForm);
 
+    this.saving = true;
     request.subscribe({
       next: (response) => {
+        this.saving = false;
         alert(response.message);
         this.closeForm();
         this.loadPlans();
       },
       error: (error) => {
+        this.saving = false;
         alert(error.error?.message || 'Unable to save membership plan');
       }
     });
   }
 
   deletePlan(plan: any): void {
+    if (this.deletingPlanId) {
+      return;
+    }
+
     const confirmed = confirm(
       `Are you sure you want to delete ${plan.planName}?`
     );
 
     if (!confirmed) return;
 
+    this.deletingPlanId = plan._id;
     this.planService.deletePlan(plan._id).subscribe({
       next: (response) => {
+        this.deletingPlanId = '';
         alert(response.message);
         this.loadPlans();
       },
       error: (error) => {
+        this.deletingPlanId = '';
         alert(error.error?.message || 'Unable to delete plan');
       }
     });

@@ -44,10 +44,14 @@ export class App implements OnInit, OnDestroy {
 
   stats: any[] = [];
   recentMembers: any[] = [];
+  readonly dashboardStatPlaceholders = [0, 1, 2, 3];
 
   dashboardLoading = false;
   dashboardError = '';
   todayAttendance = 0;
+  private dashboardLoadedAt = 0;
+  private dashboardToken = '';
+  private lastVerifiedToken = '';
 
   private sessionVerificationStarted = false;
   private routerSubscription?: Subscription;
@@ -119,6 +123,7 @@ export class App implements OnInit, OnDestroy {
     ) {
       this.sessionChecking = false;
       this.isAuthenticated = false;
+      this.lastVerifiedToken = '';
       return;
     }
 
@@ -131,6 +136,11 @@ export class App implements OnInit, OnDestroy {
         this.router.navigate(['/login']);
       }
 
+      return;
+    }
+
+    const token = localStorage.getItem('token') || '';
+    if (this.isAuthenticated && token === this.lastVerifiedToken) {
       return;
     }
 
@@ -163,6 +173,13 @@ export class App implements OnInit, OnDestroy {
           ) {
 
             this.isAuthenticated = true;
+            this.lastVerifiedToken = token;
+
+            if (this.dashboardToken && this.dashboardToken !== token) {
+              this.stats = [];
+              this.recentMembers = [];
+              this.dashboardLoadedAt = 0;
+            }
 
             this.ownerName = response.owner.name || 'Owner';
 
@@ -226,6 +243,13 @@ export class App implements OnInit, OnDestroy {
 
     this.isAuthenticated = false;
     this.sessionChecking = false;
+    this.lastVerifiedToken = '';
+    this.dashboardToken = '';
+    this.dashboardLoadedAt = 0;
+    this.stats = [];
+    this.recentMembers = [];
+    this.dashboardError = '';
+    this.todayAttendance = 0;
 
     this.ownerName = 'Admin';
     this.businessName = this.appName;
@@ -262,7 +286,19 @@ export class App implements OnInit, OnDestroy {
   }
 
   // DASHBOARD API
-  loadDashboardData(): void {
+  loadDashboardData(force = false): void {
+
+    if (this.dashboardLoading) {
+      return;
+    }
+
+    if (
+      !force &&
+      this.stats.length > 0 &&
+      Date.now() - this.dashboardLoadedAt < 60_000
+    ) {
+      return;
+    }
 
     this.dashboardLoading = true;
     this.dashboardError = '';
@@ -286,6 +322,8 @@ export class App implements OnInit, OnDestroy {
           }
 
           const data = response.stats;
+          this.dashboardLoadedAt = Date.now();
+          this.dashboardToken = localStorage.getItem('token') || '';
 
           this.todayAttendance = data.todayAttendance ?? 0;
 

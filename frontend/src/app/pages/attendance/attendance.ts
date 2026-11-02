@@ -4,6 +4,9 @@ import {
   OnInit,
   OnDestroy,
   ElementRef,
+  Input,
+  OnChanges,
+  SimpleChanges,
   ViewChild
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -24,19 +27,23 @@ import { MemberService } from '../../services/member';
   templateUrl: './attendance.html',
   styleUrl: './attendance.scss'
 })
-export class Attendance implements OnInit, OnDestroy {
+export class Attendance implements OnInit, OnDestroy, OnChanges {
 
   @ViewChild('qrVideo')
   qrVideo!: ElementRef<HTMLVideoElement>;
+  @Input() active = false;
 
   members: any[] = [];
   attendanceList: any[] = [];
+  checkedInCount = 0;
 
   selectedMemberId = '';
   selectedDate = this.getTodayDate();
 
   loadingMembers = false;
   loadingAttendance = false;
+  attendanceLoaded = false;
+  private lastLoadedAt = 0;
   processing = false;
 
   successMessage = '';
@@ -61,6 +68,22 @@ export class Attendance implements OnInit, OnDestroy {
     this.loadDailyAttendance();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (
+      changes['active'] &&
+      !changes['active'].firstChange &&
+      this.active &&
+      (!this.lastLoadedAt || Date.now() - this.lastLoadedAt >= 60_000)
+    ) {
+      if (!this.loadingMembers) {
+        this.loadMembers();
+      }
+      if (!this.loadingAttendance) {
+        this.loadDailyAttendance();
+      }
+    }
+  }
+
   ngOnDestroy(): void {
     this.stopQRScanner();
   }
@@ -79,7 +102,7 @@ export class Attendance implements OnInit, OnDestroy {
   loadMembers(): void {
     this.loadingMembers = true;
 
-    this.memberService.getMembers('', '', 1, 1000).subscribe({
+    this.memberService.getMembers('', '', 1, 100).subscribe({
       next: (response: any) => {
         this.members = response.members || [];
         this.loadingMembers = false;
@@ -95,6 +118,7 @@ export class Attendance implements OnInit, OnDestroy {
   // Load Daily Attendance
   loadDailyAttendance(): void {
     this.loadingAttendance = true;
+    this.attendanceLoaded = false;
     this.errorMessage = '';
 
     this.attendanceService
@@ -102,6 +126,11 @@ export class Attendance implements OnInit, OnDestroy {
       .subscribe({
         next: (response: any) => {
           this.attendanceList = response.attendance || [];
+          this.checkedInCount = this.attendanceList.filter(
+            attendance => !attendance.checkOut
+          ).length;
+          this.attendanceLoaded = true;
+          this.lastLoadedAt = Date.now();
           this.loadingAttendance = false;
         },
         error: (error: any) => {
@@ -114,6 +143,10 @@ export class Attendance implements OnInit, OnDestroy {
 
   // Manual Check-in
   markCheckIn(): void {
+    if (this.processing) {
+      return;
+    }
+
     if (!this.selectedMemberId) {
       this.errorMessage = 'Please select a member.';
       return;
@@ -144,6 +177,10 @@ export class Attendance implements OnInit, OnDestroy {
 
   // Manual Check-out
   markCheckOut(memberId: string): void {
+    if (this.processing) {
+      return;
+    }
+
     this.processing = true;
     this.successMessage = '';
     this.errorMessage = '';
@@ -207,6 +244,10 @@ export class Attendance implements OnInit, OnDestroy {
 
   // Send QR token to backend
   submitQRAttendance(qrToken: string): void {
+    if (this.qrProcessing) {
+      return;
+    }
+
     this.qrProcessing = true;
     this.successMessage = '';
     this.errorMessage = '';
@@ -255,8 +296,4 @@ export class Attendance implements OnInit, OnDestroy {
     this.loadDailyAttendance();
   }
 
-  // Check if member has checked in but not checked out
-  isCheckedIn(record: any): boolean {
-    return !record.checkOut;
-  }
 }

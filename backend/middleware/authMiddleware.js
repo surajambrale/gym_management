@@ -20,7 +20,9 @@ const protectOwner = async (req, res, next) => {
       config.jwtSecret
     );
 
-    const owner = await Owner.findById(decoded.ownerId);
+    const owner = await Owner.findById(decoded.ownerId)
+      .select('_id tenantId businessId role isActive')
+      .lean();
 
     if (!owner || !owner.isActive) {
       return res.status(401).json({

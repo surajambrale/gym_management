@@ -120,24 +120,36 @@
 
       <div class="dashboard-error" *ngIf="dashboardError">
         <p>{{ dashboardError }}</p>
-        <button class="secondary-btn" (click)="loadDashboardData()">Retry</button>
+        <button class="secondary-btn" (click)="loadDashboardData(true)">Retry</button>
       </div>
 
-      <div class="stats-grid" *ngIf="!dashboardLoading && !dashboardError">
-        <div class="stat-card" *ngFor="let stat of stats">
-          <div class="stat-top">
-            <span>{{ stat.title }}</span>
-            <div class="stat-icon" [ngClass]="stat.color">{{ stat.icon }}</div>
+      <div class="stats-grid" *ngIf="!dashboardError">
+        <ng-container *ngIf="!dashboardLoading; else dashboardStatSkeletons">
+          <div class="stat-card" *ngFor="let stat of stats">
+            <div class="stat-top">
+              <span>{{ stat.title }}</span>
+              <div class="stat-icon" [ngClass]="stat.color">{{ stat.icon }}</div>
+            </div>
+            <h3>{{ stat.value }}</h3>
+            <div class="stat-bottom">
+              <span>{{ stat.description }}</span>
+            </div>
           </div>
-          <h3>{{ stat.value }}</h3>
-          <div class="stat-bottom">
-            <span>{{ stat.description }}</span>
+        </ng-container>
+        <ng-template #dashboardStatSkeletons>
+          <div class="dashboard-skeleton-stats" role="status" aria-label="Loading dashboard statistics">
+            <div class="stat-card" *ngFor="let placeholder of dashboardStatPlaceholders" aria-hidden="true">
+              <div class="skeleton-line"></div>
+              <div class="skeleton-value"></div>
+              <div class="skeleton-line"></div>
+            </div>
           </div>
-        </div>
+        </ng-template>
       </div>
 
-      <div class="analytics-grid" *ngIf="!dashboardLoading && !dashboardError">
+      <div class="analytics-grid" *ngIf="!dashboardError">
 
+        <ng-container *ngIf="!dashboardLoading; else dashboardAnalyticsSkeletons">
         <div class="panel revenue-panel">
           <div class="panel-header">
             <div>
@@ -185,9 +197,23 @@
             View Attendance →
           </button>
         </div>
+        </ng-container>
+
+        <ng-template #dashboardAnalyticsSkeletons>
+          <div class="panel dashboard-panel-skeleton" role="status" aria-label="Loading membership collection">
+            <div class="skeleton-line skeleton-title"></div>
+            <div class="skeleton-value"></div>
+            <div class="skeleton-card"></div>
+          </div>
+          <div class="panel dashboard-panel-skeleton" role="status" aria-label="Loading attendance summary">
+            <div class="skeleton-line skeleton-title"></div>
+            <div class="skeleton-value"></div>
+            <div class="skeleton-card"></div>
+          </div>
+        </ng-template>
       </div>
 
-      <div class="panel members-panel" *ngIf="!dashboardLoading && !dashboardError">
+      <div class="panel members-panel" *ngIf="!dashboardError">
         <div class="panel-header">
           <div>
             <h3>Recent Members</h3>
@@ -212,7 +238,13 @@
             </thead>
 
             <tbody>
-              <tr *ngFor="let member of recentMembers">
+              <tr *ngIf="dashboardLoading">
+                <td colspan="6">
+                  <div class="dashboard-table-skeleton" role="status">Loading recent members...</div>
+                </td>
+              </tr>
+
+              <tr *ngFor="let member of recentMembers" [hidden]="dashboardLoading">
                 <td>
                   <div class="member-name">
                     <div class="member-avatar">
@@ -234,7 +266,7 @@
                 </td>
               </tr>
 
-              <tr *ngIf="recentMembers.length === 0">
+              <tr *ngIf="!dashboardLoading && recentMembers.length === 0">
                 <td colspan="6" class="empty-state">
                   No members registered yet.
                 </td>
@@ -251,16 +283,64 @@
     </section>
 
     <!-- Members Module: inline dashboard content -->
-    <app-members *ngIf="selectedMenu === 'Members'"></app-members>
+    <div [hidden]="selectedMenu !== 'Members'">
+      @defer (when selectedMenu === 'Members') {
+        <app-members [active]="selectedMenu === 'Members'"></app-members>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Members loading">
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-card"></div>
+        </section>
+      } @error {
+        <p class="module-load-error">Unable to load Members. Refresh the page to try again.</p>
+      }
+    </div>
 
     <!-- Membership Plans Module -->
-    <app-membership-plans *ngIf="selectedMenu === 'Membership Plans'"></app-membership-plans>
+    <div [hidden]="selectedMenu !== 'Membership Plans'">
+      @defer (when selectedMenu === 'Membership Plans') {
+        <app-membership-plans [active]="selectedMenu === 'Membership Plans'"></app-membership-plans>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Membership plans loading">
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-card"></div>
+        </section>
+      } @error {
+        <p class="module-load-error">Unable to load Membership Plans. Refresh the page to try again.</p>
+      }
+    </div>
 
     <!-- Attendance Module -->
-    <app-attendance *ngIf="selectedMenu === 'Attendance'"></app-attendance>
+    <div [hidden]="selectedMenu !== 'Attendance'">
+      @defer (when selectedMenu === 'Attendance') {
+        <app-attendance [active]="selectedMenu === 'Attendance'"></app-attendance>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Attendance loading">
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-card"></div>
+        </section>
+      } @error {
+        <p class="module-load-error">Unable to load Attendance. Refresh the page to try again.</p>
+      }
+    </div>
 
     <!-- Payments Module -->
-    <app-payments *ngIf="selectedMenu === 'Payments & Fees'"></app-payments>
+    <div [hidden]="selectedMenu !== 'Payments & Fees'">
+      @defer (when selectedMenu === 'Payments & Fees') {
+        <app-payments [active]="selectedMenu === 'Payments & Fees'"></app-payments>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Payments loading">
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-card"></div>
+        </section>
+      } @error {
+        <p class="module-load-error">Unable to load Payments &amp; Fees. Refresh the page to try again.</p>
+      }
+    </div>
 
     <!-- Other Modules Placeholder -->
     <section *ngIf="

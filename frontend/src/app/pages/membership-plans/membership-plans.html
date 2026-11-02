@@ -20,7 +20,7 @@
       <div class="stat-icon">▦</div>
       <div>
         <span>Total Plans</span>
-        <h2>{{ plans.length }}</h2>
+        <h2>{{ loading ? '—' : plans.length }}</h2>
       </div>
     </div>
 
@@ -28,7 +28,7 @@
       <div class="stat-icon green">✓</div>
       <div>
         <span>Active Plans</span>
-        <h2>{{ activePlans }}</h2>
+        <h2>{{ loading ? '—' : activePlans }}</h2>
       </div>
     </div>
 
@@ -36,7 +36,7 @@
       <div class="stat-icon orange">Ⅱ</div>
       <div>
         <span>Inactive Plans</span>
-        <h2>{{ inactivePlans }}</h2>
+        <h2>{{ loading ? '—' : inactivePlans }}</h2>
       </div>
     </div>
 
@@ -68,7 +68,7 @@
   </div>
 
   <!-- PLANS GRID -->
-  <div class="plans-grid" *ngIf="!loading">
+  <div class="plans-grid">
 
     <div class="plan-card" *ngFor="let plan of filteredPlans">
 
@@ -115,7 +115,7 @@
           Edit Plan
         </button>
 
-        <button class="delete-btn" (click)="deletePlan(plan)">
+        <button class="delete-btn" (click)="deletePlan(plan)" [disabled]="!!deletingPlanId">
           Delete
         </button>
       </div>
@@ -123,7 +123,7 @@
     </div>
 
     <!-- EMPTY STATE -->
-    <div class="empty-state" *ngIf="filteredPlans.length === 0">
+    <div class="empty-state" *ngIf="!loading && filteredPlans.length === 0">
       <div class="empty-icon">▦</div>
       <h3>No Membership Plans Found</h3>
       <p>Create your first membership plan to get started.</p>
@@ -238,8 +238,8 @@
     <div class="modal-footer">
       <button class="cancel-btn" (click)="closeForm()">Cancel</button>
 
-      <button class="primary-btn" (click)="savePlan()">
-        {{ isEditMode ? 'Update Plan' : 'Create Plan' }}
+      <button class="primary-btn" (click)="savePlan()" [disabled]="saving">
+        {{ saving ? 'Saving...' : isEditMode ? 'Update Plan' : 'Create Plan' }}
       </button>
     </div>
 

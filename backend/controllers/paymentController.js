@@ -209,17 +209,63 @@ exports.createPayment = async (req, res) => {
 // Get All Payments
 exports.getAllPayments = async (req, res) => {
   try {
-    const payments = await Payment.find({
-      tenantId: req.tenantId
-    })
-      .populate('memberId', 'fullName phone')
-      .populate('membershipId', 'planPrice paidAmount paymentStatus')
-      .sort({ paymentDate: -1 });
+    const currentPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageLimit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 25)
+    );
+    const filter = { tenantId: req.tenantId };
+
+    const [payments, summaryResult] = await Promise.all([
+      Payment.find(filter)
+        .select(
+          'receiptNumber memberId membershipId amount paymentMethod paymentType transactionId paymentDate status notes'
+        )
+        .populate('memberId', 'fullName phone')
+        .populate('membershipId', 'planPrice paidAmount paymentStatus')
+        .sort({ paymentDate: -1 })
+        .skip((currentPage - 1) * pageLimit)
+        .limit(pageLimit)
+        .lean(),
+      Payment.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalTransactions: { $sum: 1 },
+            totalCollection: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'Success'] }, '$amount', 0]
+              }
+            },
+            pendingTransactions: {
+              $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const summary = summaryResult[0] || {
+      totalTransactions: 0,
+      totalCollection: 0,
+      pendingTransactions: 0
+    };
+    const totalPages = Math.ceil(summary.totalTransactions / pageLimit);
 
     return res.status(200).json({
       success: true,
-      count: payments.length,
-      payments
+      count: summary.totalTransactions,
+      payments,
+      summary,
+      pagination: {
+        currentPage,
+        pageLimit,
+        totalPayments: summary.totalTransactions,
+        totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPrevPage: currentPage > 1
+      }
     });
 
   } catch (error) {

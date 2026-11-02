@@ -235,6 +235,21 @@ table {
   color: #e53935;
 }
 
+.payment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 18px;
+  color: #777;
+  font-size: 12px;
+
+  > div {
+    display: flex;
+    gap: 8px;
+  }
+}
+
 @media (max-width: 900px) {
   .payment-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

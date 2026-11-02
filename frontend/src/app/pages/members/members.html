@@ -18,7 +18,7 @@
         <div class="stat-icon">👥</div>
         <div>
             <p>Total Members</p>
-            <h2>{{ totalMembers }}</h2>
+            <h2>{{ dataLoaded ? totalMembers : '—' }}</h2>
         </div>
     </div>
 
@@ -50,11 +50,11 @@
     </div>
 
     <!-- Members Table -->
-    <div class="table-card" *ngIf="!loading && !errorMessage">
+    <div class="table-card" *ngIf="!errorMessage">
 
         <div class="table-heading">
             <h3>All Members</h3>
-            <span>{{ totalMembers }} Records</span>
+            <span>{{ loading ? 'Refreshing...' : totalMembers + ' Records' }}</span>
         </div>
 
         <div class="table-responsive">
@@ -154,7 +154,7 @@
 
                     </tr>
 
-                    <tr *ngIf="members.length === 0">
+                    <tr *ngIf="!loading && members.length === 0">
                         <td colspan="9" class="empty-state">
                             No members found. Add your first member!
                         </td>
@@ -329,8 +329,8 @@
             <div class="modal-footer">
                 <button type="button" class="cancel-btn" (click)="closeForm()">Cancel</button>
 
-                <button type="submit" class="save-btn" [disabled]="memberFormRef.invalid">
-                    {{ isEditMode ? 'Update Member' : 'Save Member' }}
+                <button type="submit" class="save-btn" [disabled]="memberFormRef.invalid || saving">
+                    {{ saving ? 'Saving...' : isEditMode ? 'Update Member' : 'Save Member' }}
                 </button>
 
 

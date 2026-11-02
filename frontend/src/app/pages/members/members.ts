@@ -1,5 +1,5 @@
 
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MemberService } from '../../services/member';
@@ -15,8 +15,9 @@ import { environment } from '../../../environments/environment';
   templateUrl: './members.html',
   styleUrl: './members.scss'
 })
-export class Members implements OnInit {
+export class Members implements OnInit, OnChanges {
   readonly appName = environment.appName;
+  @Input() active = false;
 
   members: any[] = [];
   plans: any[] = [];
@@ -31,7 +32,11 @@ export class Members implements OnInit {
   totalPages = 0;
 
   loading = false;
+  dataLoaded = false;
   errorMessage = '';
+  private lastLoadedAt = 0;
+  private plansLoadedAt = 0;
+  private plansLoading = false;
 
   saving = false;
   showForm = false;
@@ -77,6 +82,20 @@ totalDueAmount = 0;
     this.loadPlans();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (
+      changes['active'] &&
+      !changes['active'].firstChange &&
+      this.active &&
+      (!this.lastLoadedAt || Date.now() - this.lastLoadedAt >= 60_000)
+    ) {
+      if (!this.loading) {
+        this.loadMembers();
+      }
+      this.loadPlans();
+    }
+  }
+
   getEmptyForm(): any {
     return {
       fullName: '',
@@ -112,6 +131,8 @@ totalDueAmount = 0;
         this.members = response.members || [];
         this.totalMembers = response.pagination?.totalMembers || 0;
         this.totalPages = response.pagination?.totalPages || 0;
+        this.dataLoaded = true;
+        this.lastLoadedAt = Date.now();
         this.loading = false;
       },
       error: (error) => {
@@ -125,16 +146,27 @@ totalDueAmount = 0;
 
   // Load active membership plans
   loadPlans(): void {
+    if (
+      this.plansLoading ||
+      (this.plansLoadedAt && Date.now() - this.plansLoadedAt < 60_000)
+    ) {
+      return;
+    }
+
+    this.plansLoading = true;
     this.planService.getPlans().subscribe({
       next: (response) => {
         const allPlans = response.plans || response.membershipPlans || [];
         this.plans = allPlans.filter(
           (plan: any) => plan.status === 'Active'
         );
+        this.plansLoadedAt = Date.now();
+        this.plansLoading = false;
       },
       error: (error) => {
         console.error('Plans loading error:', error);
         this.plans = [];
+        this.plansLoading = false;
       }
     });
   }
