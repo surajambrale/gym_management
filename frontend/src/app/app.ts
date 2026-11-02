@@ -1,8 +1,8 @@
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterOutlet } from '@angular/router';
-import { finalize } from 'rxjs';
+import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
+import { filter, finalize, Subscription } from 'rxjs';
 
 import { AuthService } from './services/auth';
 import { DashboardService } from './services/dashboard';
@@ -28,7 +28,7 @@ import { environment } from '../environments/environment';
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
-export class App implements OnInit {
+export class App implements OnInit, OnDestroy {
 
   readonly appName = environment.appName;
   readonly appVersion = environment.appVersion;
@@ -50,6 +50,36 @@ export class App implements OnInit {
   todayAttendance = 0;
 
   private sessionVerificationStarted = false;
+  private routerSubscription?: Subscription;
+
+  // SIDEBAR MENU GROUPS
+  menuGroups = [
+    {
+      title: 'MAIN MENU',
+      items: [
+        { name: 'Dashboard', icon: '⌂' },
+        { name: 'Members', icon: '♙' },
+        { name: 'Membership Plans', icon: '▤' },
+        { name: 'Attendance', icon: '◷' },
+        { name: 'Payments & Fees', icon: '₹' }
+      ]
+    },
+    {
+      title: 'MANAGEMENT',
+      items: [
+        { name: 'Trainers & Staff', icon: '♟' },
+        { name: 'Reports & Analytics', icon: '▥' },
+        { name: 'Dance Academy', icon: '♫' }
+      ]
+    },
+    {
+      title: 'SYSTEM',
+      items: [
+        { name: 'Settings', icon: '⚙' },
+        { name: 'Subscription', icon: '◇' }
+      ]
+    }
+  ];
 
   constructor(
     private router: Router,
@@ -58,7 +88,22 @@ export class App implements OnInit {
   ) {}
 
   ngOnInit(): void {
+
+    // Check session whenever route changes.
+    this.routerSubscription = this.router.events
+      .pipe(
+        filter(event => event instanceof NavigationEnd)
+      )
+      .subscribe(() => {
+        this.verifySession();
+      });
+
+    // Initial session check
     this.verifySession();
+  }
+
+  ngOnDestroy(): void {
+    this.routerSubscription?.unsubscribe();
   }
 
   // SESSION VERIFICATION
@@ -80,11 +125,15 @@ export class App implements OnInit {
     if (!this.authService.isLoggedIn()) {
       this.sessionChecking = false;
       this.isAuthenticated = false;
-      this.router.navigate(['/login']);
+
+      if (currentUrl !== '/login') {
+        this.router.navigate(['/login']);
+      }
+
       return;
     }
 
-    // Prevent duplicate verification
+    // Avoid duplicate profile requests
     if (this.sessionVerificationStarted) {
       return;
     }
@@ -111,7 +160,6 @@ export class App implements OnInit {
             response?.business
           ) {
 
-            // Authentication successful
             this.isAuthenticated = true;
 
             this.ownerName = response.owner.name || 'Owner';
@@ -119,7 +167,6 @@ export class App implements OnInit {
             this.businessName =
               response.business.businessName || this.appName;
 
-            // Save latest profile
             localStorage.setItem(
               'owner',
               JSON.stringify(response.owner)
@@ -130,7 +177,7 @@ export class App implements OnInit {
               JSON.stringify(response.business)
             );
 
-            // Restore selected inline module
+            // Restore selected module
             if (currentUrl.startsWith('/members')) {
               this.selectedMenu = 'Members';
             } else {
@@ -139,12 +186,9 @@ export class App implements OnInit {
 
             console.log('SESSION VERIFIED SUCCESSFULLY');
 
-            // Load dashboard independently
             this.loadDashboardData();
 
           } else {
-
-            console.error('Invalid profile response');
 
             this.authService.logout();
             this.isAuthenticated = false;
@@ -162,7 +206,6 @@ export class App implements OnInit {
 
           this.router.navigate(['/login']);
         }
-
       });
   }
 
@@ -197,19 +240,8 @@ export class App implements OnInit {
     this.selectedMenu = name;
     this.mobileMenuOpen = false;
 
-    // All implemented modules are inline
-    if (
-      name === 'Dashboard' ||
-      name === 'Members' ||
-      name === 'Membership Plans' ||
-      name === 'Attendance' ||
-      name === 'Payments & Fees'
-    ) {
-      if (name === 'Dashboard') {
-        this.loadDashboardData();
-      }
-
-      return;
+    if (name === 'Dashboard') {
+      this.loadDashboardData();
     }
   }
 
@@ -310,7 +342,6 @@ export class App implements OnInit {
           this.dashboardError =
             'Unable to load dashboard data. Please try again.';
         }
-
       });
   }
 }
