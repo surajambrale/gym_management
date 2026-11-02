@@ -1,9 +1,8 @@
+
 import { Routes } from '@angular/router';
-// import { MembershipPlans } from './pages/membership-plans/membership-plans';
+
 import { Register } from './pages/auth/register/register';
 import { Login } from './pages/auth/login/login';
-import { Members } from './pages/members/members';
-// import { Attendance } from './pages/attendance/attendance';
 
 export const routes: Routes = [
 
@@ -17,22 +16,16 @@ export const routes: Routes = [
     component: Login
   },
 
-  {
-    path: 'members',
-    component: Members
-  },
-
-  // { path: 'attendance', 
-  //   component: Attendance
-  // },
-
-  // {
-  //   path: 'membership-plans',
-  //   component: MembershipPlans
-  // },
-
+  // Dashboard is rendered inside the App shell
   {
     path: 'dashboard',
+    pathMatch: 'full',
+    children: []
+  },
+
+  // Members is rendered inside the App shell
+  {
+    path: 'members',
     pathMatch: 'full',
     children: []
   },
