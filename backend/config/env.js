@@ -36,6 +36,9 @@ module.exports = Object.freeze({
   nodeEnv,
   mongodbUri: process.env.MONGODB_URI,
   jwtSecret: process.env.JWT_SECRET,
+  biometricEncryptionKeys: process.env.BIOMETRIC_ENCRYPTION_KEYS || '',
+  biometricEncryptionActiveKeyVersion:
+    process.env.BIOMETRIC_ENCRYPTION_ACTIVE_KEY_VERSION || '',
   frontendUrl,
   allowedOrigins: Object.freeze([...allowedOrigins]),
   backendUrl: process.env.BACKEND_URL || 'http://localhost:5000',
