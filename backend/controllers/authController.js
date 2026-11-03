@@ -52,7 +52,6 @@ exports.registerOwner = async (req, res) => {
 
     const validBusinessTypes = [
       'Gym',
-      'Dance Academy',
       'Yoga Studio',
       'Fitness Studio',
       'Other'

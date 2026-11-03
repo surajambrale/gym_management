@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Payment = require('../models/Payment');
 const Member = require('../models/Member');
 const MemberMembership = require('../models/MemberMembership');
+const { toMinorUnits, fromMinorUnits } = require('../utils/currency');
 
 // Create Payment
 exports.createPayment = async (req, res) => {
@@ -39,12 +40,12 @@ exports.createPayment = async (req, res) => {
       });
     }
 
-    const paymentAmount = Number(amount);
+    const paymentCents = toMinorUnits(amount);
 
-    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    if (paymentCents === null || paymentCents <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Enter a valid payment amount'
+        message: 'Enter a valid payment amount with no more than two decimal places'
       });
     }
 
@@ -102,7 +103,8 @@ exports.createPayment = async (req, res) => {
       // Verify member belongs to logged-in owner's business
       const member = await Member.findOne({
         _id: memberId,
-        tenantId: req.tenantId
+        tenantId: req.tenantId,
+        deletedAt: null
       }).session(session);
 
       if (!member) {
@@ -113,25 +115,30 @@ exports.createPayment = async (req, res) => {
       const membership = await MemberMembership.findOne({
         _id: membershipId,
         memberId,
-        tenantId: req.tenantId
+        tenantId: req.tenantId,
+        status: { $ne: 'Cancelled' }
       }).session(session);
 
       if (!membership) {
         throw new Error('Membership not found');
       }
 
-      const currentPaidAmount = Number(membership.paidAmount || 0);
-      const planPrice = Number(membership.planPrice);
+      const currentPaidCents = toMinorUnits(membership.paidAmount || 0);
+      const planPriceCents = toMinorUnits(membership.planPrice);
 
-      const pendingAmount = planPrice - currentPaidAmount;
+      if (currentPaidCents === null || planPriceCents === null) {
+        throw new Error('Membership balance is invalid');
+      }
 
-      if (pendingAmount <= 0) {
+      const pendingCents = planPriceCents - currentPaidCents;
+
+      if (pendingCents <= 0) {
         throw new Error('This membership has no pending fees');
       }
 
-      if (paymentAmount > pendingAmount) {
+      if (paymentCents > pendingCents) {
         throw new Error(
-          `Payment cannot exceed pending amount of ₹${pendingAmount}`
+          `Payment cannot exceed pending amount of ₹${fromMinorUnits(pendingCents)}`
         );
       }
 
@@ -141,7 +148,7 @@ exports.createPayment = async (req, res) => {
         businessId: req.owner.businessId,
         memberId,
         membershipId,
-        amount: paymentAmount,
+        amount: fromMinorUnits(paymentCents),
         paymentMethod,
         paymentType: selectedPaymentType,
         transactionId: transactionId || '',
@@ -157,9 +164,11 @@ exports.createPayment = async (req, res) => {
       createdPaymentId = payment._id;
 
       // Update membership paid amount
-      membership.paidAmount = currentPaidAmount + paymentAmount;
+      membership.paidAmount = fromMinorUnits(
+        currentPaidCents + paymentCents
+      );
 
-      if (membership.paidAmount >= planPrice) {
+      if (currentPaidCents + paymentCents >= planPriceCents) {
         membership.paymentStatus = 'Paid';
       } else if (membership.paidAmount > 0) {
         membership.paymentStatus = 'Partial';
@@ -216,7 +225,12 @@ exports.getAllPayments = async (req, res) => {
     );
     const filter = { tenantId: req.tenantId };
 
-    const [payments, summaryResult] = await Promise.all([
+    const [
+      payments,
+      summaryResult,
+      outstandingResult,
+      membershipCollectionResult
+    ] = await Promise.all([
       Payment.find(filter)
         .select(
           'receiptNumber memberId membershipId amount paymentMethod paymentType transactionId paymentDate status notes'
@@ -243,14 +257,79 @@ exports.getAllPayments = async (req, res) => {
             }
           }
         }
+      ]),
+      MemberMembership.aggregate([
+        {
+          $match: {
+            tenantId: req.tenantId,
+            status: { $ne: 'Cancelled' }
+          }
+        },
+        {
+          $lookup: {
+            from: 'members',
+            let: { memberId: '$memberId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$_id', '$$memberId'] },
+                      { $eq: ['$tenantId', req.tenantId] },
+                      { $eq: ['$deletedAt', null] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'member'
+          }
+        },
+        { $match: { 'member.0': { $exists: true } } },
+        {
+          $group: {
+            _id: null,
+            totalOutstanding: {
+              $sum: {
+                $max: [
+                  0,
+                  {
+                    $round: [
+                      {
+                        $subtract: [
+                          '$planPrice',
+                          { $ifNull: ['$paidAmount', 0] }
+                        ]
+                      },
+                      2
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]),
+      MemberMembership.aggregate([
+        { $match: { tenantId: req.tenantId } },
+        {
+          $group: {
+            _id: null,
+            totalCollection: { $sum: { $ifNull: ['$paidAmount', 0] } }
+          }
+        }
       ])
     ]);
 
     const summary = summaryResult[0] || {
       totalTransactions: 0,
       totalCollection: 0,
-      pendingTransactions: 0
+      pendingTransactions: 0,
+      totalOutstanding: 0
     };
+    summary.totalOutstanding = outstandingResult[0]?.totalOutstanding || 0;
+    summary.totalCollection =
+      membershipCollectionResult[0]?.totalCollection || 0;
     const totalPages = Math.ceil(summary.totalTransactions / pageLimit);
 
     return res.status(200).json({
@@ -293,7 +372,8 @@ exports.getMemberPayments = async (req, res) => {
     // Verify member belongs to logged-in owner's business
     const member = await Member.findOne({
       _id: memberId,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     });
 
     if (!member) {

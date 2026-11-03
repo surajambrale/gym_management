@@ -1,5 +1,6 @@
 const Attendance = require('../models/Attendance');
 const Member = require('../models/Member');
+const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 // Get start of day in UTC
@@ -20,7 +21,7 @@ const getDayStart = (dateValue) => {
 // Member Check-in
 const checkIn = async (req, res) => {
   try {
-    const { memberId, attendanceType, notes, attendanceDate } = req.body;
+    const { memberId, attendanceType, notes } = req.body;
 
     if (!memberId) {
       return res.status(400).json({
@@ -29,9 +30,17 @@ const checkIn = async (req, res) => {
       });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid member ID'
+      });
+    }
+
     const member = await Member.findOne({
       _id: memberId,
       tenantId: req.tenantId,
+      deletedAt: null,
       status: 'Active'
     });
 
@@ -42,37 +51,21 @@ const checkIn = async (req, res) => {
       });
     }
 
-    const dayStart = getDayStart(attendanceDate);
-
-    if (!dayStart) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid attendance date'
-      });
-    }
-
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-    // Prevent duplicate check-in on the same day
     const existingAttendance = await Attendance.findOne({
       tenantId: req.tenantId,
       memberId,
-      attendanceDate: {
-        $gte: dayStart,
-        $lt: dayEnd
-      }
-    });
+      checkOut: null
+    }).sort({ checkIn: -1 });
 
     if (existingAttendance) {
       return res.status(409).json({
         success: false,
-        message: 'Attendance already marked for this member today',
+        message: 'Member already has an open check-in',
         attendance: existingAttendance
       });
     }
 
-    const allowedTypes = ['Manual', 'QR', 'Biometric'];
+    const allowedTypes = ['Manual'];
     const type = attendanceType || 'Manual';
 
     if (!allowedTypes.includes(type)) {
@@ -82,12 +75,27 @@ const checkIn = async (req, res) => {
       });
     }
 
+    const checkInAt = new Date();
+    const dayStart = getDayStart(checkInAt);
+    const recentAttendance = await Attendance.findOne({
+      tenantId: req.tenantId,
+      memberId,
+      checkIn: { $gte: new Date(checkInAt.getTime() - 30_000) }
+    }).sort({ checkIn: -1 });
+
+    if (recentAttendance) {
+      return res.status(409).json({
+        success: false,
+        message: 'Please wait before recording another attendance scan'
+      });
+    }
+
     const attendance = await Attendance.create({
       tenantId: req.tenantId,
       businessId: req.owner.businessId,
       memberId,
       attendanceDate: dayStart,
-      checkIn: new Date(),
+      checkIn: checkInAt,
       attendanceType: type,
       status: 'Present',
       notes: notes || '',
@@ -123,28 +131,31 @@ const checkOut = async (req, res) => {
       });
     }
 
-    const dayStart = getDayStart();
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid member ID'
+      });
+    }
 
     const attendance = await Attendance.findOne({
       tenantId: req.tenantId,
       memberId,
-      attendanceDate: {
-        $gte: dayStart,
-        $lt: dayEnd
-      },
       checkOut: null
     }).sort({ checkIn: -1 });
 
     if (!attendance) {
       return res.status(404).json({
         success: false,
-        message: 'No open check-in found for this member today'
+        message: 'No open check-in found for this member'
       });
     }
 
     attendance.checkOut = new Date();
+    attendance.durationMinutes = Math.max(
+      0,
+      Math.floor((attendance.checkOut.getTime() - attendance.checkIn.getTime()) / 60000)
+    );
     await attendance.save();
 
     return res.status(200).json({
@@ -181,10 +192,10 @@ const getDailyAttendance = async (req, res) => {
 
     const attendance = await Attendance.find({
       tenantId: req.tenantId,
-      attendanceDate: {
-        $gte: dayStart,
-        $lt: dayEnd
-      }
+      $or: [
+        { attendanceDate: { $gte: dayStart, $lt: dayEnd } },
+        { checkOut: null, checkIn: { $lt: dayEnd } }
+      ]
     })
       .populate('memberId', 'fullName phone')
       .sort({ checkIn: -1 });
@@ -213,7 +224,8 @@ const getMemberAttendance = async (req, res) => {
 
     const member = await Member.findOne({
       _id: memberId,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     });
 
     if (!member) {
@@ -266,6 +278,7 @@ exports.checkInWithQR = async (req, res) => {
     const member = await Member.findOne({
       tenantId: req.tenantId,
       qrTokenHash: tokenHash,
+      deletedAt: null,
       status: 'Active'
     });
 
@@ -276,25 +289,31 @@ exports.checkInWithQR = async (req, res) => {
       });
     }
 
-    // Get today's date range
-    const dayStart = getDayStart();
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-    // Prevent duplicate attendance
     const existingAttendance = await Attendance.findOne({
       tenantId: req.tenantId,
       memberId: member._id,
-      attendanceDate: {
-        $gte: dayStart,
-        $lt: dayEnd
-      }
-    });
+      checkOut: null
+    }).sort({ checkIn: -1 });
 
     if (existingAttendance) {
       return res.status(409).json({
         success: false,
-        message: 'Attendance already marked for today'
+        message: 'Member already has an open check-in'
+      });
+    }
+
+    const checkInAt = new Date();
+    const dayStart = getDayStart(checkInAt);
+    const recentAttendance = await Attendance.findOne({
+      tenantId: req.tenantId,
+      memberId: member._id,
+      checkIn: { $gte: new Date(checkInAt.getTime() - 30_000) }
+    }).sort({ checkIn: -1 });
+
+    if (recentAttendance) {
+      return res.status(409).json({
+        success: false,
+        message: 'Please wait before recording another attendance scan'
       });
     }
 
@@ -304,7 +323,7 @@ exports.checkInWithQR = async (req, res) => {
       businessId: req.owner.businessId,
       memberId: member._id,
       attendanceDate: dayStart,
-      checkIn: new Date(),
+      checkIn: checkInAt,
       attendanceType: 'QR',
       status: 'Present',
       notes: 'QR Code Check-in',

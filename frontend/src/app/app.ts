@@ -11,6 +11,10 @@ import { Members } from './pages/members/members';
 import { MembershipPlans } from './pages/membership-plans/membership-plans';
 import { Attendance } from './pages/attendance/attendance';
 import { Payments } from './pages/payments/payments';
+import { TrainersStaff } from './pages/trainers-staff/trainers-staff';
+import { Reports } from './pages/reports/reports';
+import { BusinessSettings } from './pages/settings/settings';
+import { SubscriptionPage } from './pages/subscription/subscription';
 
 import { environment } from '../environments/environment';
 
@@ -23,7 +27,11 @@ import { environment } from '../environments/environment';
     Members,
     MembershipPlans,
     Attendance,
-    Payments
+    Payments,
+    TrainersStaff,
+    Reports,
+    BusinessSettings,
+    SubscriptionPage
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
@@ -72,8 +80,7 @@ export class App implements OnInit, OnDestroy {
       title: 'MANAGEMENT',
       items: [
         { name: 'Trainers & Staff', icon: '♟' },
-        { name: 'Reports & Analytics', icon: '▥' },
-        { name: 'Dance Academy', icon: '♫' }
+        { name: 'Reports & Analytics', icon: '▥' }
       ]
     },
     {

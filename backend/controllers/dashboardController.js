@@ -17,30 +17,78 @@ exports.getDashboardStats = async (req, res) => {
 
     const [totalMembers, activeMembers, todayAttendance, paymentSummary, recentMembers] =
       await Promise.all([
-        Member.countDocuments({ tenantId }),
-        Member.countDocuments({ tenantId, status: 'Active' }),
+        Member.countDocuments({ tenantId, deletedAt: null }),
+        Member.countDocuments({ tenantId, deletedAt: null, status: 'Active' }),
         Attendance.countDocuments({
           tenantId,
           attendanceDate: { $gte: startOfDay, $lte: endOfDay }
         }),
-        MemberMembership.aggregate([
-          { $match: { tenantId } },
-          {
-            $group: {
-              _id: null,
-              totalCollected: { $sum: '$paidAmount' },
-              totalPending: {
-                $sum: { $subtract: ['$planPrice', '$paidAmount'] }
+        Promise.all([
+          MemberMembership.aggregate([
+            { $match: { tenantId } },
+            { $group: { _id: null, totalCollected: { $sum: '$paidAmount' } } }
+          ]),
+          MemberMembership.aggregate([
+            {
+              $match: {
+                tenantId,
+                status: { $ne: 'Cancelled' }
+              }
+            },
+            {
+              $lookup: {
+                from: 'members',
+                let: { memberId: '$memberId' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$_id', '$$memberId'] },
+                          { $eq: ['$tenantId', tenantId] },
+                          { $eq: ['$deletedAt', null] }
+                        ]
+                      }
+                    }
+                  }
+                ],
+                as: 'member'
+              }
+            },
+            { $match: { 'member.0': { $exists: true } } },
+            {
+              $group: {
+                _id: null,
+                totalPending: {
+                  $sum: {
+                    $max: [
+                      0,
+                      {
+                        $round: [
+                          {
+                            $subtract: [
+                              '$planPrice',
+                              { $ifNull: ['$paidAmount', 0] }
+                            ]
+                          },
+                          2
+                        ]
+                      }
+                    ]
+                  }
+                }
               }
             }
-          }
+          ])
         ]),
-        Member.find({ tenantId })
+        Member.find({ tenantId, deletedAt: null })
           .sort({ createdAt: -1 })
           .limit(5)
           .select('fullName phone status joiningDate createdAt')
           .lean()
       ]);
+
+    const [collectionResult, outstandingResult] = paymentSummary;
 
     res.status(200).json({
       success: true,
@@ -48,8 +96,8 @@ exports.getDashboardStats = async (req, res) => {
         totalMembers,
         activeMembers,
         todayAttendance,
-        totalCollected: paymentSummary[0]?.totalCollected || 0,
-        totalPending: paymentSummary[0]?.totalPending || 0
+        totalCollected: collectionResult[0]?.totalCollected || 0,
+        totalPending: outstandingResult[0]?.totalPending || 0
       },
       recentMembers
     });

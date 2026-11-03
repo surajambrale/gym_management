@@ -35,6 +35,12 @@ const attendanceSchema = new mongoose.Schema(
       default: null
     },
 
+    durationMinutes: {
+      type: Number,
+      min: 0,
+      default: null
+    },
+
     attendanceType: {
       type: String,
       enum: ['Manual', 'QR', 'Biometric'],

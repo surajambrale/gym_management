@@ -65,6 +65,12 @@ const memberSchema = new mongoose.Schema(
             default: 'Active'
         },
 
+        deletedAt: {
+            type: Date,
+            default: null,
+            select: false
+        },
+
         notes: {
             type: String,
             default: ''

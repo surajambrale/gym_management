@@ -1,0 +1,18 @@
+<section class="settings-page">
+  <header><span class="eyebrow">BUSINESS PROFILE</span><h2>Settings</h2><p>Update your tenant’s business contact and profile details.</p></header>
+  <p *ngIf="loading">Loading business settings…</p>
+  <p class="success" *ngIf="successMessage">{{ successMessage }}</p>
+  <p class="error" *ngIf="errorMessage">{{ errorMessage }}</p>
+  <form class="settings-panel" *ngIf="!loading" (ngSubmit)="save()">
+    <label>Business name *<input name="businessName" [(ngModel)]="form.businessName" required maxlength="120"></label>
+    <label>Business type
+      <select name="businessType" [(ngModel)]="form.businessType">
+        <option *ngFor="let type of businessTypes" [value]="type">{{ type }}</option>
+      </select>
+    </label>
+    <label>Phone<input name="phone" [(ngModel)]="form.phone"></label>
+    <label>Email<input type="email" name="email" [(ngModel)]="form.email"></label>
+    <label class="wide">Address<textarea name="address" [(ngModel)]="form.address" rows="3"></textarea></label>
+    <button class="primary-btn" [disabled]="saving">{{ saving ? 'Saving…' : 'Save settings' }}</button>
+  </form>
+</section>

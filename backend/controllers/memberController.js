@@ -1,5 +1,10 @@
 const Member = require('../models/Member');
 const MemberMembership = require('../models/MemberMembership');
+const Attendance = require('../models/Attendance');
+const Payment = require('../models/Payment');
+const BiometricEnrollment = require('../models/BiometricEnrollment');
+const MemberDeletionAudit = require('../models/MemberDeletionAudit');
+const mongoose = require('mongoose');
 const crypto = require('crypto');
 // Add New Member
 exports.createMember = async (req, res) => {
@@ -30,7 +35,8 @@ exports.createMember = async (req, res) => {
     // Check duplicate phone within the logged-in business
     const existingMember = await Member.findOne({
       tenantId: req.tenantId,
-      phone: cleanPhone
+      phone: cleanPhone,
+      deletedAt: null
     });
 
     if (existingMember) {
@@ -102,7 +108,8 @@ exports.getAllMembers = async (req, res) => {
 
     // Tenant filter
     const filter = {
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     };
 
     // Search by name or phone
@@ -257,7 +264,8 @@ exports.updateMember = async (req, res) => {
     const member = await Member.findOneAndUpdate(
       {
         _id: id,
-        tenantId: req.tenantId
+        tenantId: req.tenantId,
+        deletedAt: null
       },
       { $set: updates },
       {
@@ -305,28 +313,153 @@ exports.updateMember = async (req, res) => {
 
 // Delete Member
 exports.deleteMember = async (req, res) => {
+  let session;
+
   try {
     const { id } = req.params;
 
-    const member = await Member.findOneAndDelete({
-      _id: id,
-      tenantId: req.tenantId
+    if (!req.owner || req.owner.role !== 'owner') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the authenticated business owner can delete a member'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid member ID'
+      });
+    }
+
+    session = await mongoose.startSession();
+
+    let deletionSummary;
+
+    await session.withTransaction(async () => {
+      const member = await Member.findOne({
+        _id: id,
+        tenantId: req.tenantId,
+        deletedAt: null
+      }).session(session);
+
+      if (!member) {
+        const error = new Error('Member not found');
+        error.code = 'MEMBER_NOT_FOUND';
+        throw error;
+      }
+
+      const payments = await Payment.find({
+        tenantId: req.tenantId,
+        memberId: member._id
+      })
+        .select('membershipId')
+        .session(session)
+        .lean();
+
+      const membershipRecords = await MemberMembership.find({
+        tenantId: req.tenantId,
+        memberId: member._id
+      })
+        .select('_id paidAmount')
+        .session(session)
+        .lean();
+
+      const membershipIds = new Set(
+        membershipRecords.map((membership) => membership._id.toString())
+      );
+      const retainedMembershipIdSet = new Set(
+        payments
+          .map((payment) => payment.membershipId?.toString())
+          .filter((membershipId) => membershipId && membershipIds.has(membershipId))
+      );
+      membershipRecords.forEach((membership) => {
+        if (Number(membership.paidAmount || 0) > 0) {
+          retainedMembershipIdSet.add(membership._id.toString());
+        }
+      });
+      const retainedMembershipIds = [...retainedMembershipIdSet];
+
+      const attendanceResult = await Attendance.deleteMany({
+        tenantId: req.tenantId,
+        memberId: member._id
+      }).session(session);
+
+      const biometricResult = await BiometricEnrollment.deleteMany({
+        tenantId: req.tenantId,
+        memberId: member._id
+      }).session(session);
+
+      const membershipFilter = {
+        tenantId: req.tenantId,
+        memberId: member._id
+      };
+
+      if (retainedMembershipIds.length > 0) {
+        membershipFilter._id = {
+          $nin: retainedMembershipIds.map(
+            (membershipId) => new mongoose.Types.ObjectId(membershipId)
+          )
+        };
+      }
+
+      const membershipResult = await MemberMembership.deleteMany(
+        membershipFilter
+      ).session(session);
+
+      member.fullName = 'Deleted member';
+      member.phone = `DELETED-${member._id}`;
+      member.email = '';
+      member.gender = 'Other';
+      member.dateOfBirth = null;
+      member.address = '';
+      member.emergencyContact = '';
+      member.status = 'Inactive';
+      member.notes = '';
+      member.qrTokenHash = null;
+      member.deletedAt = new Date();
+      await member.save({ session });
+
+      await MemberDeletionAudit.create(
+        [{
+          tenantId: req.tenantId,
+          deletedMemberId: member._id,
+          actorId: req.owner._id,
+          retainedPaymentCount: payments.length,
+          retainedMembershipCount: retainedMembershipIds.length,
+          deletedAttendanceCount: attendanceResult.deletedCount || 0,
+          deletedBiometricEnrollmentCount: biometricResult.deletedCount || 0,
+          deletedMembershipCount: membershipResult.deletedCount || 0
+        }],
+        { session }
+      );
+
+      deletionSummary = {
+        retainedPaymentCount: payments.length,
+        retainedMembershipCount: retainedMembershipIds.length,
+        deletedAttendanceCount: attendanceResult.deletedCount || 0,
+        deletedBiometricEnrollmentCount: biometricResult.deletedCount || 0
+      };
     });
 
-    if (!member) {
+    return res.status(200).json({
+      success: true,
+      message: 'Member profile and eligible operational data were deleted',
+      retainedFinancialRecords: {
+        payments: deletionSummary.retainedPaymentCount,
+        memberships: deletionSummary.retainedMembershipCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete Member Error:', error);
+
+    if (error.code === 'MEMBER_NOT_FOUND') {
       return res.status(404).json({
         success: false,
         message: 'Member not found'
       });
     }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Member deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('Delete Member Error:', error);
 
     if (error.name === 'CastError') {
       return res.status(400).json({
@@ -335,10 +468,25 @@ exports.deleteMember = async (req, res) => {
       });
     }
 
+    if (
+      error.code === 20 ||
+      error.codeName === 'IllegalOperation' ||
+      error.message?.includes('Transaction numbers are only allowed')
+    ) {
+      return res.status(503).json({
+        success: false,
+        message: 'Safe member deletion requires MongoDB transaction support'
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: 'Unable to delete member'
     });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 };
 
@@ -350,7 +498,8 @@ exports.generateMemberQR = async (req, res) => {
     // Find member within logged-in owner's business
     const member = await Member.findOne({
       _id: id,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     });
 
     if (!member) {

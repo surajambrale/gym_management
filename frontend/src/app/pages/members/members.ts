@@ -397,7 +397,7 @@ totalDueAmount = 0;
   // Delete member
   deleteMember(member: any): void {
     const confirmed = confirm(
-      `Are you sure you want to delete ${member.fullName}?`
+      `Permanently delete ${member.fullName} and remove eligible operational data? Financial payment records required for retention will be preserved and anonymized. This cannot be undone.`
     );
 
     if (!confirmed) return;

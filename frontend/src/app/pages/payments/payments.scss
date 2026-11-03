@@ -57,7 +57,7 @@
 
 .payment-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 25px;
 }
@@ -112,6 +112,11 @@
 .pending-icon {
   background: #fff5e7;
   color: #d58b19;
+}
+
+.outstanding-icon {
+  background: #fff0ef;
+  color: #b42318;
 }
 
 .payment-panel {

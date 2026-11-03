@@ -30,7 +30,8 @@ export class Payments implements OnInit, OnChanges {
   paymentSummary = {
     totalTransactions: 0,
     totalCollection: 0,
-    pendingTransactions: 0
+    pendingTransactions: 0,
+    totalOutstanding: null as number | null
   };
   paymentSummaryLoaded = false;
   private queuedPaymentPage?: number;
@@ -113,18 +114,8 @@ export class Payments implements OnInit, OnChanges {
           this.errorMessage = 'Payment summary is unavailable. Please retry.';
           return;
         } else {
-          this.paymentSummary = {
-            totalTransactions: response.count ?? this.payments.length,
-            totalCollection: this.payments
-              .filter(payment => payment.status === 'Success')
-              .reduce(
-                (total, payment) => total + Number(payment.amount || 0),
-                0
-              ),
-            pendingTransactions: this.payments.filter(
-              payment => payment.status === 'Pending'
-            ).length
-          };
+          this.errorMessage = 'Payment summary is unavailable. Please retry.';
+          return;
         }
         this.paymentSummaryLoaded = true;
         this.totalPayments =
@@ -197,11 +188,11 @@ export class Payments implements OnInit, OnChanges {
           const allMemberships = response.memberships || [];
 
           this.memberships = allMemberships.filter((membership: any) => {
-            const pending =
-              Number(membership.planPrice) -
-              Number(membership.paidAmount || 0);
+            const pendingCents =
+              Math.round(Number(membership.planPrice) * 100) -
+              Math.round(Number(membership.paidAmount || 0) * 100);
 
-            return membership.status !== 'Cancelled' && pending > 0;
+            return membership.status !== 'Cancelled' && pendingCents > 0;
           });
 
           this.membershipsLoading = false;
@@ -228,11 +219,10 @@ export class Payments implements OnInit, OnChanges {
       return 0;
     }
 
-    return Math.max(
-      0,
-      Number(this.selectedMembership.planPrice) -
-      Number(this.selectedMembership.paidAmount || 0)
-    );
+    const pendingCents =
+      Math.round(Number(this.selectedMembership.planPrice) * 100) -
+      Math.round(Number(this.selectedMembership.paidAmount || 0) * 100);
+    return Math.max(0, pendingCents) / 100;
   }
 
   // Select membership
@@ -327,6 +317,15 @@ export class Payments implements OnInit, OnChanges {
 
   get pendingTransactions(): number {
     return this.paymentSummary.pendingTransactions;
+  }
+
+  get hasOutstandingSummary(): boolean {
+    const value = this.paymentSummary.totalOutstanding;
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  get totalOutstanding(): number {
+    return Number(this.paymentSummary.totalOutstanding || 0);
   }
 
   changePage(page: number): void {

@@ -40,6 +40,9 @@ app.use(
   '/api/member-memberships',
   require('./routes/memberMembershipRoutes')
 );
+app.use('/api/trainers-staff', require('./routes/trainerStaffRoutes'));
+app.use('/api/business', require('./routes/businessRoutes'));
+app.use('/api/reports', require('./routes/reportRoutes'));
 
 // Root Route
 app.get('/', (req, res) => {

@@ -1,0 +1,24 @@
+.management-page { padding: 24px; color: #202124; }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+.page-heading h2 { margin: 8px 0; }
+.page-heading p { margin: 0; color: #777; }
+.eyebrow { color: #e53935; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; }
+.form-panel, .table-panel { background: #fff; border: 1px solid #ededed; border-radius: 12px; padding: 22px; margin-bottom: 20px; }
+.form-panel h3, .table-panel h3 { margin: 0 0 16px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+label { display: grid; gap: 7px; color: #555; font-size: 12px; }
+input, select { width: 100%; padding: 11px; border: 1px solid #ddd; border-radius: 7px; }
+.form-actions, .actions { display: flex; gap: 9px; margin-top: 16px; }
+.primary-btn, .secondary-btn, .actions button { padding: 9px 14px; border: 0; border-radius: 7px; cursor: pointer; }
+.primary-btn { background: #e53935; color: white; }
+.secondary-btn, .actions button { background: #f1f2f4; color: #333; }
+.actions .danger { color: #b42318; background: #fff0ef; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 760px; }
+th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 12px; }
+th { color: #777; }
+.actions { margin: 0; }
+.empty { text-align: center; color: #888; padding: 24px; }
+.success-message { color: #16794b; }
+.error-message { color: #b42318; }
+@media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } .page-heading { align-items: flex-start; } }

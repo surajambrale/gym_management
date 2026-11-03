@@ -1,0 +1,36 @@
+<section class="reports-page">
+  <header class="page-heading">
+    <div><span class="eyebrow">BUSINESS PERFORMANCE</span><h2>Reports &amp; Analytics</h2><p>Tenant-scoped results from saved member, attendance and payment records.</p></div>
+    <button class="secondary-btn" (click)="load()" [disabled]="loading">Refresh report</button>
+  </header>
+  <form class="filter-panel" (ngSubmit)="load()">
+    <label>From <input type="date" name="from" [(ngModel)]="from" required></label>
+    <label>To <input type="date" name="to" [(ngModel)]="to" required></label>
+    <button class="primary-btn" [disabled]="loading">{{ loading ? 'Generating…' : 'Generate report' }}</button>
+  </form>
+  <p class="error-message" *ngIf="errorMessage">{{ errorMessage }}</p>
+  <p *ngIf="loading">Generating report from recorded data…</p>
+  <ng-container *ngIf="report as result">
+    <div class="summary-grid">
+      <article><span>Members joined</span><strong>{{ result.summary.membersJoined }}</strong></article>
+      <article><span>Attendance visits</span><strong>{{ result.summary.attendanceVisits }}</strong></article>
+      <article><span>Gym duration (hours)</span><strong>{{ result.summary.gymDurationMinutes / 60 | number:'1.1-1' }}</strong></article>
+      <article><span>Successful collection</span><strong>₹{{ result.summary.successfulCollection | number:'1.2-2' }}</strong></article>
+      <article><span>Transactions</span><strong>{{ result.summary.transactions }}</strong></article>
+      <article><span>Pending transactions</span><strong>{{ result.summary.pendingTransactions }}</strong></article>
+      <article><span>Current outstanding membership fees</span><strong>₹{{ result.summary.outstandingMembershipFees | number:'1.2-2' }}</strong></article>
+    </div>
+    <div class="table-panel">
+      <h3>Daily activity: {{ result.from }} to {{ result.to }}</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Date (UTC)</th><th>Visits</th><th>Checked out</th><th>Gym duration (min)</th><th>Transactions</th><th>Successful collection</th><th>Pending</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let day of result.daily">
+            <td>{{ day.date }}</td><td>{{ day.attendance }}</td><td>{{ day.checkedOut }}</td><td>{{ day.durationMinutes }}</td><td>{{ day.transactions }}</td>
+            <td>₹{{ day.successfulAmount | number:'1.2-2' }}</td><td>{{ day.pendingTransactions }}</td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>
+  </ng-container>
+</section>

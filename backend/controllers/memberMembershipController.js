@@ -2,6 +2,7 @@
 const MemberMembership = require('../models/MemberMembership');
 const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
+const { toMinorUnits, fromMinorUnits } = require('../utils/currency');
 
 const addDuration = (date, duration, durationType) => {
   const result = new Date(date);
@@ -31,7 +32,8 @@ const assignMembership = async (req, res) => {
 
     const member = await Member.findOne({
       _id: memberId,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     });
 
     if (!member) {
@@ -54,12 +56,14 @@ const assignMembership = async (req, res) => {
       });
     }
 
-    const amountPaid = Number(paidAmount);
+    const amountPaidCents = toMinorUnits(paidAmount);
+    const planPriceCents = toMinorUnits(plan.price);
 
     if (
-      !Number.isFinite(amountPaid) ||
-      amountPaid < 0 ||
-      amountPaid > plan.price
+      amountPaidCents === null ||
+      planPriceCents === null ||
+      amountPaidCents < 0 ||
+      amountPaidCents > planPriceCents
     ) {
       return res.status(400).json({
         success: false,
@@ -83,9 +87,9 @@ const assignMembership = async (req, res) => {
     );
 
     const paymentStatus =
-      amountPaid === plan.price
+      amountPaidCents === planPriceCents
         ? 'Paid'
-        : amountPaid > 0
+        : amountPaidCents > 0
           ? 'Partial'
           : 'Pending';
 
@@ -97,7 +101,7 @@ const assignMembership = async (req, res) => {
       startDate: membershipStartDate,
       endDate,
       planPrice: plan.price,
-      paidAmount: amountPaid,
+      paidAmount: fromMinorUnits(amountPaidCents),
       paymentStatus,
       status: 'Active',
       createdBy: req.owner._id
@@ -126,7 +130,8 @@ const getMemberMemberships = async (req, res) => {
 
     const member = await Member.findOne({
       _id: memberId,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      deletedAt: null
     });
 
     if (!member) {

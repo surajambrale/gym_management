@@ -35,9 +35,9 @@
     <div class="payment-stat-card">
       <div class="stat-icon collection-icon">₹</div>
       <div>
-        <span>Total Collection</span>
+        <span>Membership Collection</span>
         <h3>{{ paymentSummaryLoaded ? '₹' + (totalCollection | number:'1.0-0') : '—' }}</h3>
-        <small>Successful payments</small>
+        <small>Paid amounts recorded against memberships</small>
       </div>
     </div>
 
@@ -56,6 +56,15 @@
         <span>Pending Transactions</span>
         <h3>{{ paymentSummaryLoaded ? pendingTransactions : '—' }}</h3>
         <small>Awaiting confirmation</small>
+      </div>
+    </div>
+
+    <div class="payment-stat-card">
+      <div class="stat-icon outstanding-icon">!</div>
+      <div>
+        <span>Outstanding Fees</span>
+        <h3>{{ paymentSummaryLoaded && hasOutstandingSummary ? '₹' + (totalOutstanding | number:'1.2-2') : '—' }}</h3>
+        <small>Unpaid non-cancelled membership balances</small>
       </div>
     </div>
 

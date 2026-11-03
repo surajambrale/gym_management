@@ -24,7 +24,6 @@ export class Register {
 
   businessTypes = [
     'Gym',
-    'Dance Academy',
     'Yoga Studio',
     'Fitness Studio',
     'Other'

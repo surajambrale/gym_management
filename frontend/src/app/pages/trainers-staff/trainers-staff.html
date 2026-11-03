@@ -1,0 +1,58 @@
+<section class="management-page">
+  <header class="page-heading">
+    <div>
+      <span class="eyebrow">TEAM MANAGEMENT</span>
+      <h2>Trainers &amp; Staff</h2>
+      <p>Manage the people working at your business.</p>
+    </div>
+    <button class="secondary-btn" (click)="load()" [disabled]="loading">Refresh</button>
+  </header>
+
+  <p class="success-message" *ngIf="successMessage">{{ successMessage }}</p>
+  <p class="error-message" *ngIf="errorMessage">{{ errorMessage }}</p>
+
+  <form class="form-panel" (ngSubmit)="save()">
+    <h3>{{ editingId ? 'Edit team member' : 'Add team member' }}</h3>
+    <div class="form-grid">
+      <label>Name *<input name="name" [(ngModel)]="form.name" maxlength="120" required></label>
+      <label>Phone *<input name="phone" [(ngModel)]="form.phone" maxlength="30" required></label>
+      <label>Email<input type="email" name="email" [(ngModel)]="form.email"></label>
+      <label>Role
+        <select name="role" [(ngModel)]="form.role">
+          <option value="Trainer">Trainer</option>
+          <option value="Staff">Staff</option>
+        </select>
+      </label>
+      <label>Specialization<input name="specialization" [(ngModel)]="form.specialization" maxlength="120"></label>
+      <label>Status
+        <select name="status" [(ngModel)]="form.status">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="primary-btn" [disabled]="saving">{{ saving ? 'Saving…' : (editingId ? 'Save changes' : 'Add team member') }}</button>
+      <button type="button" class="secondary-btn" *ngIf="editingId" (click)="resetForm()">Cancel edit</button>
+    </div>
+  </form>
+
+  <div class="table-panel">
+    <h3>Team directory</h3>
+    <p *ngIf="loading">Loading team records…</p>
+    <div class="table-scroll" *ngIf="!loading">
+      <table>
+        <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Specialization</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let record of records">
+            <td>{{ record.name }}</td><td>{{ record.role }}</td><td>{{ record.phone }}</td>
+            <td>{{ record.email || '—' }}</td><td>{{ record.specialization || '—' }}</td>
+            <td>{{ record.status }}</td>
+            <td class="actions"><button type="button" (click)="edit(record)">Edit</button><button type="button" class="danger" (click)="remove(record)">Delete</button></td>
+          </tr>
+          <tr *ngIf="records.length === 0"><td colspan="7" class="empty">No trainers or staff have been added.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

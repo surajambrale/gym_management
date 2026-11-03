@@ -12,7 +12,6 @@ const businessSchema = new mongoose.Schema(
       type: String,
       enum: [
         'Gym',
-        'Dance Academy',
         'Yoga Studio',
         'Fitness Studio',
         'Other'

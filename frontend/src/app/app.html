@@ -50,9 +50,9 @@
     <div class="sidebar-bottom">
       <div class="upgrade-card">
         <div class="upgrade-icon">✦</div>
-        <h4>Upgrade Your Plan</h4>
-        <p>Unlock more features for your business.</p>
-        <button (click)="selectMenu('Subscription')">Explore Plans →</button>
+        <h4>Subscription Status</h4>
+        <p>View the status configured for your business account.</p>
+        <button (click)="selectMenu('Subscription')">View Subscription →</button>
       </div>
 
       <div class="sidebar-footer">
@@ -342,28 +342,45 @@
       }
     </div>
 
-    <!-- Other Modules Placeholder -->
-    <section *ngIf="
-      selectedMenu !== 'Dashboard' &&
-      selectedMenu !== 'Members' &&
-      selectedMenu !== 'Membership Plans' &&
-      selectedMenu !== 'Attendance' &&
-      selectedMenu !== 'Payments & Fees'
-    " class="coming-soon">
+    <div [hidden]="selectedMenu !== 'Trainers & Staff'">
+      @defer (when selectedMenu === 'Trainers & Staff') {
+        <app-trainers-staff></app-trainers-staff>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Team records loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>
+      } @error {
+        <p class="module-load-error">Unable to load Trainers &amp; Staff.</p>
+      }
+    </div>
 
-      <div class="coming-icon">⚙</div>
-      <span class="eyebrow">DEVELOPMENT IN PROGRESS</span>
-      <h2>{{ selectedMenu }}</h2>
+    <div [hidden]="selectedMenu !== 'Reports & Analytics'">
+      @defer (when selectedMenu === 'Reports & Analytics') {
+        <app-reports></app-reports>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Reports loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>
+      } @error {
+        <p class="module-load-error">Unable to load Reports &amp; Analytics.</p>
+      }
+    </div>
 
-      <p>
-        This module will be developed and connected with the backend
-        in upcoming development phases.
-      </p>
+    <div [hidden]="selectedMenu !== 'Settings'">
+      @defer (when selectedMenu === 'Settings') {
+        <app-business-settings (businessUpdated)="businessName = $event"></app-business-settings>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Settings loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>
+      } @error {
+        <p class="module-load-error">Unable to load Settings.</p>
+      }
+    </div>
 
-      <button class="primary-btn" (click)="selectMenu('Dashboard')">
-        ← Back to Dashboard
-      </button>
-    </section>
+    <div [hidden]="selectedMenu !== 'Subscription'">
+      @defer (when selectedMenu === 'Subscription') {
+        <app-subscription></app-subscription>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Subscription loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>
+      } @error {
+        <p class="module-load-error">Unable to load Subscription.</p>
+      }
+    </div>
 
   </main>
 </div>
