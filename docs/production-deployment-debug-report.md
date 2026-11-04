@@ -1,8 +1,8 @@
 # Production Deployment Debug Report
 
-**Investigation date:** 2026-11-04  
-**Repository:** `surajambrale/gym_management`  
-**Production frontend:** `https://gym-management-14mf.vercel.app`  
+**Investigation date:** 2026-11-04
+**Repository:** `surajambrale/gym_management`
+**Production frontend:** `https://gym-management-14mf.vercel.app`
 **Production backend:** `https://gym-management-1-1nnb.onrender.com`
 
 ## Findings and root cause
