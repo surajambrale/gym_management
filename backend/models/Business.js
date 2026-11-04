@@ -42,6 +42,60 @@ const businessSchema = new mongoose.Schema(
       trim: true
     },
 
+    logoUrl: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    gstEnabled: {
+      type: Boolean,
+      default: false
+    },
+
+    gstinNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: ''
+    },
+
+    legalBusinessName: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    registeredBusinessAddress: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    state: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    stateCode: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+
+    gstPercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0
+    },
+
+    taxInclusive: {
+      type: Boolean,
+      default: true
+    },
+
     status: {
       type: String,
       enum: ['Active', 'Inactive', 'Suspended'],

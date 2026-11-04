@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -9,6 +9,8 @@ import { environment } from '../../environments/environment';
 export class DashboardService {
 
   private apiUrl = `${environment.apiUrl}/dashboard`;
+  private readonly refreshSubject = new Subject<void>();
+  readonly refreshRequested$ = this.refreshSubject.asObservable();
 
   constructor(private http: HttpClient) {}
 
@@ -28,5 +30,9 @@ export class DashboardService {
         headers: this.getAuthHeaders()
       }
     );
+  }
+
+  requestRefresh(): void {
+    this.refreshSubject.next();
   }
 }

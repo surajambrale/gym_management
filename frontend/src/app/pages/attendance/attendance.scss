@@ -183,6 +183,68 @@ button:disabled {
   }
 }
 
+.attendance-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attendance-export-menu {
+  position: relative;
+}
+
+.attendance-export-btn {
+  list-style: none;
+  padding: 11px 16px;
+  border-radius: 8px;
+  background: #d92332;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attendance-export-btn::-webkit-details-marker {
+  display: none;
+}
+
+.attendance-export-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 170px;
+  padding: 5px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+
+  button {
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #333;
+    text-align: left;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: #fff0f0;
+      color: #b91c2a;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+  }
+}
+
 .table-responsive {
   width: 100%;
   overflow-x: auto;
@@ -424,6 +486,11 @@ table {
   .table-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .attendance-table-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .qr-scanner-modal {

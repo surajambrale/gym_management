@@ -37,6 +37,29 @@
             <option value="Inactive">Inactive</option>
             <option value="On Hold">On Hold</option>
         </select>
+
+        <select [(ngModel)]="dateRange" (change)="onDateRangeChange()" aria-label="Filter by joining date">
+            <option value="">All Joining Dates</option>
+            <option *ngFor="let option of dateRangeOptions" [value]="option.value">
+                {{ option.label }}
+            </option>
+        </select>
+
+        <div class="custom-date-range" *ngIf="dateRange === 'custom'">
+            <label>
+                From
+                <input type="date" [(ngModel)]="customDateFrom" name="customDateFrom"
+                    (change)="onCustomDateChange()" aria-label="Custom range start date" />
+            </label>
+            <label>
+                To
+                <input type="date" [(ngModel)]="customDateTo" name="customDateTo"
+                    (change)="onCustomDateChange()" aria-label="Custom range end date" />
+            </label>
+        </div>
+        <p class="filter-validation" *ngIf="filterValidationMessage">
+            {{ filterValidationMessage }}
+        </p>
     </div>
 
     <!-- Loading -->
@@ -49,18 +72,45 @@
         {{ errorMessage }}
     </div>
 
+    <div class="message-box error" *ngIf="exportErrorMessage">
+        {{ exportErrorMessage }}
+    </div>
+
     <!-- Members Table -->
     <div class="table-card" *ngIf="!errorMessage">
 
         <div class="table-heading">
             <h3>All Members</h3>
-            <span>{{ loading ? 'Refreshing...' : totalMembers + ' Records' }}</span>
+            <div class="table-heading-actions">
+                <span *ngIf="selectedMemberRecords.size > 0" class="selected-count">
+                    {{ selectedMemberRecords.size }} selected
+                    <button type="button" class="clear-selection-btn" (click)="clearSelectedMembers()">Clear</button>
+                </span>
+                <details class="export-menu">
+                    <summary class="add-btn export-btn" title="With selected members, exports only the selection; otherwise exports all matching members.">
+                        {{ exportLoading ? 'Preparing...' : 'Export' }} ▾
+                    </summary>
+                    <div class="export-options">
+                        <button type="button" (click)="exportPdf()" [disabled]="exportLoading"
+                            title="Downloads a PDF report.">PDF Download</button>
+                        <button type="button" (click)="exportExcel()" [disabled]="exportLoading">Excel Download</button>
+                        <button type="button" (click)="exportCsv()" [disabled]="exportLoading">CSV Download</button>
+                        <button type="button" (click)="printReport()" [disabled]="exportLoading">Print Report</button>
+                    </div>
+                </details>
+                <span>{{ loading ? 'Refreshing...' : totalMembers + ' Records' }}</span>
+            </div>
         </div>
 
         <div class="table-responsive">
             <table>
                 <thead>
                     <tr>
+                        <th class="select-column">
+                            <input type="checkbox" [checked]="allVisibleMembersSelected"
+                                (change)="toggleVisibleMembersFromEvent($event)"
+                                aria-label="Select all members on this page" />
+                        </th>
                         <th>MEMBER</th>
                         <th>PHONE</th>
                         <th>EMAIL</th>
@@ -76,6 +126,11 @@
                 <tbody>
                     <tr *ngFor="let member of members">
 
+                        <td class="select-column">
+                            <input type="checkbox" [checked]="isMemberSelected(member)"
+                                (change)="toggleMemberSelection(member, $any($event.target).checked)"
+                                [attr.aria-label]="'Select ' + member.fullName" />
+                        </td>
                         <td>
                             <div class="member-info">
                                 <div class="avatar">
@@ -155,7 +210,7 @@
                     </tr>
 
                     <tr *ngIf="!loading && members.length === 0">
-                        <td colspan="9" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             No members found. Add your first member!
                         </td>
                     </tr>
@@ -307,16 +362,8 @@
                                 <input [value]="membershipEndDate" readonly />
                             </div>
 
-                            <div class="form-group">
-                                <label>Paid Amount (₹)</label>
-                                <input type="number" name="paidAmount" [(ngModel)]="memberForm.paidAmount" min="0"
-                                    [max]="selectedPlan.price" placeholder="Enter paid amount" />
-                            </div>
-
                             <div class="form-group full-width">
-                                <small>
-                                    Remaining Amount: ₹{{ selectedPlan.price - (memberForm.paidAmount || 0) }}
-                                </small>
+                                <small>Membership fees are collected and receipted separately in Payments &amp; Fees after the membership is assigned.</small>
                             </div>
 
                         </ng-container>

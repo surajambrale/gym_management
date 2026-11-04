@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable, expand, reduce } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -26,7 +26,9 @@ export class MemberService {
     search: string = '',
     status: string = '',
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
+    from?: string,
+    to?: string
   ): Observable<any> {
 
     let params = new HttpParams()
@@ -41,10 +43,39 @@ export class MemberService {
       params = params.set('status', status);
     }
 
+    if (from && to) {
+      params = params.set('from', from).set('to', to);
+    }
+
     return this.http.get<any>(this.apiUrl, {
       headers: this.getAuthHeaders(),
       params
     });
+  }
+
+  getAllMatchingMembers(
+    search: string,
+    status: string,
+    from?: string,
+    to?: string
+  ): Observable<any[]> {
+    const pageLimit = 100;
+
+    return this.getMembers(search, status, 1, pageLimit, from, to).pipe(
+      expand((response, index) => {
+        const pagination = response.pagination;
+        if (!pagination?.hasNextPage) return EMPTY;
+        return this.getMembers(
+          search,
+          status,
+          index + 2,
+          pageLimit,
+          from,
+          to
+        );
+      }),
+      reduce((members, response) => members.concat(response.members || []), [] as any[])
+    );
   }
 
   // Add Member

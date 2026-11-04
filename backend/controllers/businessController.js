@@ -1,13 +1,68 @@
 const Business = require('../models/Business');
+const {
+  isValidGstin,
+  isValidStateCode,
+  GST_STATES
+} = require('../utils/gst');
 
-const businessFields = ['businessName', 'businessType', 'phone', 'email', 'address'];
+const businessFields = [
+  'businessName',
+  'businessType',
+  'phone',
+  'email',
+  'address',
+  'logoUrl',
+  'gstEnabled',
+  'gstinNumber',
+  'legalBusinessName',
+  'registeredBusinessAddress',
+  'state',
+  'stateCode',
+  'gstPercentage',
+  'taxInclusive'
+];
 const businessTypes = ['Gym', 'Yoga Studio', 'Fitness Studio', 'Other'];
+const settingsProjection =
+  'businessName businessType ownerName phone email address logoUrl subscriptionStatus gstEnabled gstinNumber legalBusinessName registeredBusinessAddress state stateCode gstPercentage taxInclusive';
+
+const validateGstSettings = (settings) => {
+  if (typeof settings.gstEnabled !== 'boolean') {
+    return 'GST enabled must be true or false';
+  }
+  if (!settings.gstEnabled) return null;
+
+  if (!isValidGstin(settings.gstinNumber)) {
+    return 'Enter a structurally valid GSTIN. Government registration is not verified by this application.';
+  }
+  if (settings.gstinNumber.slice(0, 2) !== settings.stateCode) {
+    return 'GSTIN state code must match the registered business state code';
+  }
+  if (!isValidStateCode(settings.stateCode) || !settings.state) {
+    return 'Select a valid registered business state and state code';
+  }
+  if (settings.state !== GST_STATES[settings.stateCode]) {
+    return 'Registered business state does not match the state code';
+  }
+  if (!String(settings.legalBusinessName || '').trim()) {
+    return 'Legal business name is required when GST is enabled';
+  }
+  if (!String(settings.registeredBusinessAddress || '').trim()) {
+    return 'Registered business address is required when GST is enabled';
+  }
+  const rate = Number(settings.gstPercentage);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    return 'GST percentage must be between 0 and 100';
+  }
+  if (typeof settings.taxInclusive !== 'boolean') {
+    return 'Select tax-inclusive or tax-exclusive pricing';
+  }
+  return null;
+};
 
 exports.getSettings = async (req, res) => {
   try {
-    const business = await Business.findById(req.tenantId).select(
-      'businessName businessType ownerName phone email address subscriptionStatus'
-    );
+    const business = await Business.findById(req.tenantId)
+      .select(settingsProjection);
     if (!business) {
       return res.status(404).json({ success: false, message: 'Business not found' });
     }
@@ -47,13 +102,72 @@ exports.updateSettings = async (req, res) => {
   if (updates.phone !== undefined) updates.phone = String(updates.phone).trim();
   if (updates.email !== undefined) updates.email = String(updates.email).trim().toLowerCase();
   if (updates.address !== undefined) updates.address = String(updates.address).trim();
+  if (updates.logoUrl !== undefined) {
+    updates.logoUrl = String(updates.logoUrl).trim();
+    if (updates.logoUrl) {
+      try {
+        if (new URL(updates.logoUrl).protocol !== 'https:') throw new Error('protocol');
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: 'Business logo URL must use HTTPS'
+        });
+      }
+    }
+  }
+  if (updates.gstinNumber !== undefined) {
+    updates.gstinNumber = String(updates.gstinNumber).trim().toUpperCase();
+  }
+  for (const field of ['legalBusinessName', 'registeredBusinessAddress', 'state']) {
+    if (updates[field] !== undefined) updates[field] = String(updates[field]).trim();
+  }
+  if (updates.stateCode !== undefined) {
+    updates.stateCode = String(updates.stateCode).trim();
+  }
+  if (updates.gstEnabled !== undefined && typeof updates.gstEnabled !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      message: 'GST enabled must be true or false'
+    });
+  }
+  if (updates.taxInclusive !== undefined && typeof updates.taxInclusive !== 'boolean') {
+    return res.status(400).json({
+      success: false,
+      message: 'Select tax-inclusive or tax-exclusive pricing'
+    });
+  }
+  if (updates.gstPercentage !== undefined) {
+    const rate = Number(updates.gstPercentage);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'GST percentage must be between 0 and 100'
+      });
+    }
+    updates.gstPercentage = rate;
+  }
 
   try {
-    const business = await Business.findByIdAndUpdate(
-      req.tenantId,
+    const existing = await Business.findById(req.tenantId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Business not found' });
+    }
+    const validationMessage = validateGstSettings({
+      ...existing.toObject(),
+      ...updates
+    });
+    if (validationMessage) {
+      return res.status(400).json({
+        success: false,
+        message: validationMessage
+      });
+    }
+
+    const business = await Business.findOneAndUpdate(
+      { _id: req.tenantId },
       { $set: updates },
       { new: true, runValidators: true }
-    ).select('businessName businessType ownerName phone email address subscriptionStatus');
+    ).select(settingsProjection);
     if (!business) {
       return res.status(404).json({ success: false, message: 'Business not found' });
     }

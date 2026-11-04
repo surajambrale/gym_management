@@ -3,7 +3,7 @@
   <p *ngIf="loading">Loading business settings…</p>
   <p class="success" *ngIf="successMessage">{{ successMessage }}</p>
   <p class="error" *ngIf="errorMessage">{{ errorMessage }}</p>
-  <form class="settings-panel" *ngIf="!loading" (ngSubmit)="save()">
+  <form class="settings-panel" *ngIf="!loading" (ngSubmit)="save()" #settingsForm="ngForm">
     <label>Business name *<input name="businessName" [(ngModel)]="form.businessName" required maxlength="120"></label>
     <label>Business type
       <select name="businessType" [(ngModel)]="form.businessType">
@@ -13,6 +13,43 @@
     <label>Phone<input name="phone" [(ngModel)]="form.phone"></label>
     <label>Email<input type="email" name="email" [(ngModel)]="form.email"></label>
     <label class="wide">Address<textarea name="address" [(ngModel)]="form.address" rows="3"></textarea></label>
-    <button class="primary-btn" [disabled]="saving">{{ saving ? 'Saving…' : 'Save settings' }}</button>
+    <label class="wide">Business logo URL (optional)<input type="url" name="logoUrl" [(ngModel)]="form.logoUrl" placeholder="https://..."></label>
+
+    <section class="gst-settings wide">
+      <div class="gst-heading">
+        <div><h3>GST &amp; Tax</h3><p>Configure GST details for future membership invoices.</p></div>
+        <label class="gst-toggle"><input type="checkbox" name="gstEnabled" [(ngModel)]="form.gstEnabled"> Enable GST</label>
+      </div>
+      <p class="gst-disclaimer">GSTIN format is validated locally; government registration is not verified.</p>
+      <div class="gst-grid" [class.disabled]="!form.gstEnabled">
+        <label>GSTIN Number
+          <input name="gstinNumber" [(ngModel)]="form.gstinNumber" maxlength="15" pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][1-9A-Za-z]Z[0-9A-Za-z]" [required]="form.gstEnabled" [disabled]="!form.gstEnabled">
+        </label>
+        <label>Legal Business Name
+          <input name="legalBusinessName" [(ngModel)]="form.legalBusinessName" [required]="form.gstEnabled" [disabled]="!form.gstEnabled">
+        </label>
+        <label class="wide">Registered Business Address
+          <textarea name="registeredBusinessAddress" [(ngModel)]="form.registeredBusinessAddress" rows="2" [required]="form.gstEnabled" [disabled]="!form.gstEnabled"></textarea>
+        </label>
+        <label>Registered State
+          <select name="stateCode" [(ngModel)]="form.stateCode" (ngModelChange)="onStateCodeChange($event)" [required]="form.gstEnabled" [disabled]="!form.gstEnabled">
+            <option value="">Select state</option>
+            <option *ngFor="let item of gstStates" [value]="item.code">{{ item.name }} ({{ item.code }})</option>
+          </select>
+        </label>
+        <label>GST Percentage
+          <input type="number" name="gstPercentage" [(ngModel)]="form.gstPercentage" min="0" max="100" step="0.01" [required]="form.gstEnabled" [disabled]="!form.gstEnabled">
+        </label>
+        <label>Membership Plan Pricing
+          <select name="taxInclusive" [(ngModel)]="form.taxInclusive" [disabled]="!form.gstEnabled">
+            <option [ngValue]="true">Tax inclusive</option>
+            <option [ngValue]="false">Tax exclusive (GST added)</option>
+          </select>
+        </label>
+        <p class="gst-note wide">CGST + SGST or IGST is determined from the registered state and the validated place-of-supply state selected during payment. These settings apply to new memberships only.</p>
+      </div>
+    </section>
+
+    <button class="primary-btn" [disabled]="saving || settingsForm.invalid">{{ saving ? 'Saving…' : 'Save settings' }}</button>
   </form>
 </section>

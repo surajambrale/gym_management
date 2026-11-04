@@ -6,6 +6,7 @@ const BiometricEnrollment = require('../models/BiometricEnrollment');
 const MemberDeletionAudit = require('../models/MemberDeletionAudit');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const { parseMemberDateRange } = require('../utils/memberDateRange');
 // Add New Member
 exports.createMember = async (req, res) => {
   try {
@@ -93,6 +94,8 @@ exports.getAllMembers = async (req, res) => {
     const {
       search = '',
       status = '',
+      from,
+      to,
       page = 1,
       limit = 10
     } = req.query;
@@ -109,8 +112,20 @@ exports.getAllMembers = async (req, res) => {
     // Tenant filter
     const filter = {
       tenantId: req.tenantId,
+      businessId: req.owner.businessId,
       deletedAt: null
     };
+
+    const dateRange = parseMemberDateRange(from, to);
+    if (dateRange.error) {
+      return res.status(400).json({
+        success: false,
+        message: dateRange.error
+      });
+    }
+    if (dateRange.range) {
+      filter.joiningDate = dateRange.range;
+    }
 
     // Search by name or phone
     if (search.trim()) {
@@ -146,11 +161,35 @@ exports.getAllMembers = async (req, res) => {
 
     const memberships = await MemberMembership.find({
       tenantId: req.tenantId,
+      businessId: req.owner.businessId,
       memberId: { $in: memberIds }
     })
       .populate('planId', 'planName duration durationType price')
       .sort({ createdAt: -1 })
       .lean();
+
+    const membershipIds = memberships.map(membership => membership._id);
+    const paymentTotals = membershipIds.length
+      ? await Payment.aggregate([
+          {
+            $match: {
+              tenantId: req.tenantId,
+              businessId: req.owner.businessId,
+              membershipId: { $in: membershipIds },
+              status: 'Success'
+            }
+          },
+          {
+            $group: {
+              _id: '$membershipId',
+              paidAmount: { $sum: '$amount' }
+            }
+          }
+        ])
+      : [];
+    const paidByMembership = new Map(
+      paymentTotals.map(item => [String(item._id), item.paidAmount])
+    );
 
     // Attach latest membership to each member
     const membershipMap = new Map();
@@ -159,7 +198,16 @@ exports.getAllMembers = async (req, res) => {
       const memberId = membership.memberId.toString();
 
       if (!membershipMap.has(memberId)) {
-        membershipMap.set(memberId, membership);
+        const paidAmount = Number(paidByMembership.get(String(membership._id)) || 0);
+        membershipMap.set(memberId, {
+          ...membership,
+          paidAmount,
+          paymentStatus: paidAmount >= Number(membership.planPrice)
+            ? 'Paid'
+            : paidAmount > 0
+              ? 'Partial'
+              : 'Pending'
+        });
       }
     });
 

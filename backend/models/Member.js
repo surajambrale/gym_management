@@ -65,6 +65,12 @@ const memberSchema = new mongoose.Schema(
             default: 'Active'
         },
 
+        assignedTrainerId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'TrainerStaff',
+            default: null
+        },
+
         deletedAt: {
             type: Date,
             default: null,
@@ -101,5 +107,6 @@ memberSchema.index(
 );
 memberSchema.index({ tenantId: 1, createdAt: -1 });
 memberSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
+memberSchema.index({ tenantId: 1, assignedTrainerId: 1 });
 
 module.exports = mongoose.model('Member', memberSchema);

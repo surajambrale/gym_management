@@ -485,3 +485,19 @@ table {
     cursor: not-allowed;
   }
 }
+
+.receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.receipt-actions .receipt-btn {
+  padding: 7px 9px;
+  font-size: 10px;
+}
+
+.receipt-btn.secondary-receipt-btn {
+  border-color: #ddd;
+  color: #444;
+}

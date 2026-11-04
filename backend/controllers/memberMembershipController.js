@@ -2,7 +2,10 @@
 const MemberMembership = require('../models/MemberMembership');
 const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
+const Business = require('../models/Business');
+const Payment = require('../models/Payment');
 const { toMinorUnits, fromMinorUnits } = require('../utils/currency');
+const { calculateGst } = require('../utils/gst');
 
 const addDuration = (date, duration, durationType) => {
   const result = new Date(date);
@@ -33,6 +36,7 @@ const assignMembership = async (req, res) => {
     const member = await Member.findOne({
       _id: memberId,
       tenantId: req.tenantId,
+      businessId: req.owner.businessId,
       deletedAt: null
     });
 
@@ -70,6 +74,75 @@ const assignMembership = async (req, res) => {
         message: 'Invalid paid amount'
       });
     }
+    if (amountPaidCents > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Record initial membership payments through Payments & Fees so the transaction and receipt are recorded.'
+      });
+    }
+
+    const business = await Business.findById(req.tenantId).lean();
+    if (!business || String(business._id) !== String(req.owner.businessId)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found'
+      });
+    }
+
+    let gstSnapshot;
+    let invoiceAmountCents = planPriceCents;
+    if (business.gstEnabled) {
+      let tax;
+      try {
+        tax = calculateGst({
+          configuredPrice: planPriceCents,
+          rate: business.gstPercentage,
+          inclusive: business.taxInclusive,
+          businessStateCode: business.stateCode,
+          placeOfSupplyStateCode: business.stateCode
+        });
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Business GST settings are incomplete or invalid; review Settings before assigning a membership.'
+        });
+      }
+
+      invoiceAmountCents = tax.totalAmount;
+      gstSnapshot = {
+        enabled: true,
+        configuredPrice: fromMinorUnits(planPriceCents),
+        taxableAmount: fromMinorUnits(tax.taxableAmount),
+        gstPercentage: tax.gstRate,
+        totalTax: fromMinorUnits(tax.totalTax),
+        totalAmount: fromMinorUnits(tax.totalAmount),
+        taxInclusive: tax.inclusive,
+        gstinNumber: business.gstinNumber,
+        legalBusinessName: business.legalBusinessName,
+        registeredBusinessAddress: business.registeredBusinessAddress,
+        businessName: business.businessName,
+        phone: business.phone,
+        email: business.email,
+        logoUrl: business.logoUrl || '',
+        state: business.state,
+        stateCode: business.stateCode
+      };
+    } else {
+      gstSnapshot = {
+        enabled: false,
+        configuredPrice: fromMinorUnits(planPriceCents),
+        taxableAmount: fromMinorUnits(planPriceCents),
+        gstPercentage: 0,
+        totalTax: 0,
+        totalAmount: fromMinorUnits(planPriceCents),
+        taxInclusive: true,
+        businessName: business.businessName,
+        phone: business.phone,
+        email: business.email,
+        address: business.address || '',
+        logoUrl: business.logoUrl || ''
+      };
+    }
 
     const membershipStartDate = new Date(startDate);
 
@@ -86,13 +159,6 @@ const assignMembership = async (req, res) => {
       plan.durationType
     );
 
-    const paymentStatus =
-      amountPaidCents === planPriceCents
-        ? 'Paid'
-        : amountPaidCents > 0
-          ? 'Partial'
-          : 'Pending';
-
     const membership = await MemberMembership.create({
       tenantId: req.tenantId,
       businessId: req.owner.businessId,
@@ -100,9 +166,10 @@ const assignMembership = async (req, res) => {
       planId: plan._id,
       startDate: membershipStartDate,
       endDate,
-      planPrice: plan.price,
-      paidAmount: fromMinorUnits(amountPaidCents),
-      paymentStatus,
+      planPrice: fromMinorUnits(invoiceAmountCents),
+      paidAmount: 0,
+      paymentStatus: 'Pending',
+      gstSnapshot,
       status: 'Active',
       createdBy: req.owner._id
     });
@@ -143,14 +210,50 @@ const getMemberMemberships = async (req, res) => {
 
     const memberships = await MemberMembership.find({
       memberId,
-      tenantId: req.tenantId
+      tenantId: req.tenantId,
+      businessId: req.owner.businessId
     })
       .populate('planId', 'planName duration durationType price')
       .sort({ createdAt: -1 });
 
+    const membershipIds = memberships.map(membership => membership._id);
+    const paidAmounts = membershipIds.length
+      ? await Payment.aggregate([
+          {
+            $match: {
+              tenantId: req.tenantId,
+              businessId: req.owner.businessId,
+              membershipId: { $in: membershipIds },
+              status: 'Success'
+            }
+          },
+          {
+            $group: {
+              _id: '$membershipId',
+              paidAmount: { $sum: '$amount' }
+            }
+          }
+        ])
+      : [];
+    const paidByMembership = new Map(
+      paidAmounts.map(item => [String(item._id), item.paidAmount])
+    );
+    const membershipsWithLedgerStatus = memberships.map(membership => {
+      const paidAmount = Number(paidByMembership.get(String(membership._id)) || 0);
+      return {
+        ...membership.toObject(),
+        paidAmount,
+        paymentStatus: paidAmount >= Number(membership.planPrice)
+          ? 'Paid'
+          : paidAmount > 0
+            ? 'Partial'
+            : 'Pending'
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      memberships
+      memberships: membershipsWithLedgerStatus
     });
 
   } catch (error) {

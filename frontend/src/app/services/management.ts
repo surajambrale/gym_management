@@ -4,7 +4,7 @@ import {
   HttpHeaders,
   HttpParams
 } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable, expand, reduce } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
@@ -18,9 +18,20 @@ export class ManagementService {
     return new HttpHeaders({ Authorization: `Bearer ${token}` });
   }
 
-  getStaff(): Observable<any> {
+  getStaff(options: {
+    role?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Observable<any> {
+    let params = new HttpParams();
+    Object.entries(options).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params = params.set(key, value);
+    });
     return this.http.get(`${this.baseUrl}/trainers-staff`, {
-      headers: this.headers
+      headers: this.headers,
+      params
     });
   }
 
@@ -42,12 +53,73 @@ export class ManagementService {
     });
   }
 
-  getReport(from: string, to: string): Observable<any> {
-    const params = new HttpParams().set('from', from).set('to', to);
+  getTrainerAssignments(id: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/trainers-staff/${id}/assignments`, {
+      headers: this.headers
+    });
+  }
+
+  assignMemberToTrainer(id: string, memberId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/trainers-staff/${id}/assignments`, { memberId }, {
+      headers: this.headers
+    });
+  }
+
+  removeTrainerAssignment(id: string, memberId: string): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/trainers-staff/${id}/assignments/${memberId}`, {
+      headers: this.headers
+    });
+  }
+
+  getTrainerStaffReport(filters: {
+    role?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }): Observable<any> {
+    let params = new HttpParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params = params.set(key, value);
+    });
+    return this.http.get(`${this.baseUrl}/trainers-staff/reports`, {
+      headers: this.headers,
+      params
+    });
+  }
+
+  getReport(filters: Record<string, string | number | boolean | undefined>): Observable<any> {
+    let params = new HttpParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params = params.set(key, value);
+    });
     return this.http.get(`${this.baseUrl}/reports`, {
       headers: this.headers,
       params
     });
+  }
+
+  getAllReportRows(
+    filters: Record<string, string | number | boolean | undefined>
+  ): Observable<any[]> {
+    const pageSize = 100;
+    return this.getReport({
+      ...filters,
+      detailsOnly: true,
+      page: 1,
+      limit: pageSize
+    }).pipe(
+      expand((response, index) => {
+        const detail = response.detail;
+        if (!detail?.totalPages || index + 1 >= detail.totalPages) return EMPTY;
+        return this.getReport({
+          ...filters,
+          detailsOnly: true,
+          page: index + 2,
+          limit: pageSize
+        });
+      }),
+      reduce((rows, response) => rows.concat(response.detail?.records || []), [] as any[])
+    );
   }
 
   getSettings(): Observable<any> {

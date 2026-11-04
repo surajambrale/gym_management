@@ -192,6 +192,7 @@ const getDailyAttendance = async (req, res) => {
 
     const attendance = await Attendance.find({
       tenantId: req.tenantId,
+      businessId: req.owner.businessId,
       $or: [
         { attendanceDate: { $gte: dayStart, $lt: dayEnd } },
         { checkOut: null, checkIn: { $lt: dayEnd } }

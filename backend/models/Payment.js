@@ -76,6 +76,41 @@ const paymentSchema = new mongoose.Schema(
       sparse: true
     },
 
+    receiptSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+
+    refund: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+
+    statusHistory: {
+      type: [{
+        status: {
+          type: String,
+          enum: ['Success', 'Pending', 'Failed', 'Refunded'],
+          required: true
+        },
+        changedAt: {
+          type: Date,
+          required: true
+        },
+        changedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Owner',
+          required: true
+        },
+        reason: {
+          type: String,
+          trim: true,
+          default: ''
+        }
+      }],
+      default: []
+    },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Owner',

@@ -1,27 +1,41 @@
 const Member = require('../models/Member');
 const Attendance = require('../models/Attendance');
 const MemberMembership = require('../models/MemberMembership');
+const Payment = require('../models/Payment');
+const { getDashboardPeriods } = require('../utils/dashboardPeriods');
+
+const dashboardTimeZone = process.env.DASHBOARD_TIME_ZONE || 'Asia/Kolkata';
+
+try {
+  new Intl.DateTimeFormat('en-US', { timeZone: dashboardTimeZone });
+} catch (error) {
+  throw new Error(`Invalid DASHBOARD_TIME_ZONE: ${dashboardTimeZone}`, {
+    cause: error
+  });
+}
 
 exports.getDashboardStats = async (req, res) => {
   try {
     const tenantId = req.tenantId;
-
-    // Today's attendance (UTC date range)
     const now = new Date();
-
-    const startOfDay = new Date(now);
-    startOfDay.setUTCHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(now);
-    endOfDay.setUTCHours(23, 59, 59, 999);
-
-    const [totalMembers, activeMembers, todayAttendance, paymentSummary, recentMembers] =
+    const periods = getDashboardPeriods(now, dashboardTimeZone);
+    const [
+      totalMembers,
+      activeMembers,
+      todayAttendance,
+      paymentSummary,
+      recentMembers,
+      paymentCollections
+    ] =
       await Promise.all([
         Member.countDocuments({ tenantId, deletedAt: null }),
         Member.countDocuments({ tenantId, deletedAt: null, status: 'Active' }),
         Attendance.countDocuments({
           tenantId,
-          attendanceDate: { $gte: startOfDay, $lte: endOfDay }
+          attendanceDate: {
+            $gte: periods.todayStart,
+            $lt: periods.tomorrowStart
+          }
         }),
         Promise.all([
           MemberMembership.aggregate([
@@ -85,19 +99,96 @@ exports.getDashboardStats = async (req, res) => {
           .sort({ createdAt: -1 })
           .limit(5)
           .select('fullName phone status joiningDate createdAt')
-          .lean()
+          .lean(),
+        Payment.aggregate([
+          {
+            $match: {
+              tenantId,
+              businessId: req.owner.businessId,
+              status: 'Success',
+              paymentDate: {
+                $gte: periods.firstMonthStart,
+                $lt: now
+              }
+            }
+          },
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: '%Y-%m',
+                  date: '$paymentDate',
+                  timezone: dashboardTimeZone
+                }
+              },
+              revenue: { $sum: '$amount' },
+              todayCollection: {
+                $sum: {
+                  $cond: [
+                    { $gte: ['$paymentDate', periods.todayStart] },
+                    '$amount',
+                    0
+                  ]
+                }
+              },
+              weekCollection: {
+                $sum: {
+                  $cond: [
+                    { $gte: ['$paymentDate', periods.weekStart] },
+                    '$amount',
+                    0
+                  ]
+                }
+              },
+              monthCollection: {
+                $sum: {
+                  $cond: [
+                    { $gte: ['$paymentDate', periods.monthStart] },
+                    '$amount',
+                    0
+                  ]
+                }
+              }
+            }
+          },
+          { $sort: { _id: 1 } }
+        ])
       ]);
 
     const [collectionResult, outstandingResult] = paymentSummary;
+    const collectionByMonth = new Map(
+      paymentCollections.map((item) => [item._id, item])
+    );
+    const monthlyRevenue = periods.months.map(({ key, start }) => {
+      const month = collectionByMonth.get(key);
+      return {
+        key,
+        month: new Date(`${key}-01T00:00:00.000Z`).toLocaleDateString('en-IN', {
+          timeZone: 'UTC',
+          month: 'short',
+          year: 'numeric'
+        }),
+        revenue: month?.revenue || 0
+      };
+    });
+    const currentPeriodCollection =
+      paymentCollections.find((item) => item._id === monthlyRevenue.at(-1)?.key);
 
     res.status(200).json({
       success: true,
+      timeZone: dashboardTimeZone,
       stats: {
         totalMembers,
         activeMembers,
         todayAttendance,
         totalCollected: collectionResult[0]?.totalCollected || 0,
         totalPending: outstandingResult[0]?.totalPending || 0
+      },
+      collections: {
+        today: currentPeriodCollection?.todayCollection || 0,
+        week: currentPeriodCollection?.weekCollection || 0,
+        month: currentPeriodCollection?.monthCollection || 0,
+        monthlyRevenue
       },
       recentMembers
     });

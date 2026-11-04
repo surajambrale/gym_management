@@ -55,6 +55,26 @@ const memberMembershipSchema = new mongoose.Schema(
       default: 'Pending'
     },
 
+    gstSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+
+    invoiceNumber: {
+      type: String,
+      trim: true
+    },
+
+    placeOfSupplyStateCode: {
+      type: String,
+      trim: true
+    },
+
+    taxBreakdown: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+
     status: {
       type: String,
       enum: ['Active', 'Expired', 'Cancelled'],
@@ -76,6 +96,10 @@ memberMembershipSchema.index({
   createdAt: -1
 });
 memberMembershipSchema.index({ tenantId: 1, status: 1 });
+memberMembershipSchema.index(
+  { businessId: 1, invoiceNumber: 1 },
+  { unique: true, partialFilterExpression: { invoiceNumber: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model(
   'MemberMembership',

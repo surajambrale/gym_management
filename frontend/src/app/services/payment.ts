@@ -50,4 +50,11 @@ export class PaymentService {
     );
   }
 
+  getPaymentReceipt(paymentId: string): Observable<any> {
+    return this.http.get(
+      `${this.apiUrl}/${encodeURIComponent(paymentId)}/receipt`,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
 }

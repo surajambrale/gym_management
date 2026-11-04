@@ -14,13 +14,16 @@ import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
 import * as QRCode from 'qrcode';
 import { PaymentService } from '../../services/payment';
+import { jsPDF } from 'jspdf';
 import { environment } from '../../../environments/environment';
 import {
   Subscription,
+  Observable,
   finalize,
   forkJoin,
   from,
   switchMap,
+  of,
   throwError,
   timeout
 } from 'rxjs';
@@ -41,6 +44,22 @@ export class Members implements OnInit, OnChanges, OnDestroy {
 
   search = '';
   status = '';
+  dateRange = '';
+  customDateFrom = '';
+  customDateTo = '';
+  exportLoading = false;
+  exportErrorMessage = '';
+  filterValidationMessage = '';
+  readonly dateRangeOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
+    { value: 'week', label: 'This Week' },
+    { value: 'month', label: 'This Month' },
+    { value: 'lastMonth', label: 'Last Month' },
+    { value: 'year', label: 'This Year' },
+    { value: 'custom', label: 'Custom Date Range' }
+  ];
+  readonly selectedMemberRecords = new Map<string, any>();
 
   currentPage = 1;
   limit = 10;
@@ -158,15 +177,33 @@ totalDueAmount = 0;
   loadMembers(): void {
     this.loading = true;
     this.errorMessage = '';
+    this.filterValidationMessage = '';
+    const dateBounds = this.getDateBounds();
+
+    if (dateBounds.error) {
+      this.loading = false;
+      this.filterValidationMessage = dateBounds.error;
+      this.members = [];
+      this.totalMembers = 0;
+      this.totalPages = 0;
+      return;
+    }
 
     this.memberService.getMembers(
       this.search,
       this.status,
       this.currentPage,
-      this.limit
+      this.limit,
+      dateBounds.from,
+      dateBounds.to
     ).subscribe({
       next: (response) => {
         this.members = response.members || [];
+        this.members.forEach(member => {
+          if (this.selectedMemberRecords.has(member._id)) {
+            this.selectedMemberRecords.set(member._id, member);
+          }
+        });
         this.totalMembers = response.pagination?.totalMembers || 0;
         this.totalPages = response.pagination?.totalPages || 0;
         this.dataLoaded = true;
@@ -244,6 +281,478 @@ totalDueAmount = 0;
     this.loadMembers();
   }
 
+  onDateRangeChange(): void {
+    this.exportErrorMessage = '';
+    if (this.dateRange !== 'custom') {
+      this.searchMembers();
+      return;
+    }
+
+    this.searchMembers();
+  }
+
+  onCustomDateChange(): void {
+    this.exportErrorMessage = '';
+    this.searchMembers();
+  }
+
+  private toLocalDateInput(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private getDateBounds(): { from?: string; to?: string; error?: string } {
+    if (!this.dateRange) return {};
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let start: Date;
+    let end: Date;
+
+    switch (this.dateRange) {
+      case 'today':
+        start = today;
+        end = new Date(today);
+        end.setDate(end.getDate() + 1);
+        break;
+      case 'yesterday':
+        end = today;
+        start = new Date(today);
+        start.setDate(start.getDate() - 1);
+        break;
+      case 'week': {
+        start = new Date(today);
+        const daysSinceMonday = (today.getDay() + 6) % 7;
+        start.setDate(start.getDate() - daysSinceMonday);
+        end = new Date(today);
+        end.setDate(end.getDate() + 1);
+        break;
+      }
+      case 'month':
+        start = new Date(today.getFullYear(), today.getMonth(), 1);
+        end = new Date(today);
+        end.setDate(end.getDate() + 1);
+        break;
+      case 'lastMonth':
+        start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        end = new Date(today.getFullYear(), today.getMonth(), 1);
+        break;
+      case 'year':
+        start = new Date(today.getFullYear(), 0, 1);
+        end = new Date(today);
+        end.setDate(end.getDate() + 1);
+        break;
+      case 'custom': {
+        if (!this.customDateFrom || !this.customDateTo) {
+          return {
+            error: 'Select both a start date and an end date for the custom range.'
+          };
+        }
+
+        const fromParts = this.customDateFrom.split('-').map(Number);
+        const toParts = this.customDateTo.split('-').map(Number);
+        start = new Date(fromParts[0], fromParts[1] - 1, fromParts[2]);
+        end = new Date(toParts[0], toParts[1] - 1, toParts[2]);
+        if (
+          this.toLocalDateInput(start) !== this.customDateFrom ||
+          this.toLocalDateInput(end) !== this.customDateTo ||
+          start > end
+        ) {
+          return {
+            error: 'Enter a valid custom date range. The start date must not be after the end date.'
+          };
+        }
+        end.setDate(end.getDate() + 1);
+        break;
+      }
+      default:
+        return { error: 'Select a valid joining date range.' };
+    }
+
+    return { from: start.toISOString(), to: end.toISOString() };
+  }
+
+  get allVisibleMembersSelected(): boolean {
+    return this.members.length > 0 &&
+      this.members.every(member => this.selectedMemberRecords.has(member._id));
+  }
+
+  isMemberSelected(member: any): boolean {
+    return this.selectedMemberRecords.has(member._id);
+  }
+
+  toggleMemberSelection(member: any, selected: boolean): void {
+    if (selected) {
+      this.selectedMemberRecords.set(member._id, member);
+    } else {
+      this.selectedMemberRecords.delete(member._id);
+    }
+  }
+
+  toggleVisibleMembers(selected: boolean): void {
+    this.members.forEach(member => this.toggleMemberSelection(member, selected));
+  }
+
+  toggleVisibleMembersFromEvent(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    this.toggleVisibleMembers(target.checked);
+  }
+
+  clearSelectedMembers(): void {
+    this.selectedMemberRecords.clear();
+  }
+
+  private getExportRows(): Observable<any[]> {
+    const selected = [...this.selectedMemberRecords.values()];
+    if (selected.length > 0) {
+      return of(selected);
+    }
+
+    const bounds = this.getDateBounds();
+    if (bounds.error) {
+      return throwError(() => new Error(bounds.error));
+    }
+
+    return this.memberService.getAllMatchingMembers(
+      this.search,
+      this.status,
+      bounds.from,
+      bounds.to
+    );
+  }
+
+  private toExportRecords(members: any[]): string[][] {
+    return members.map(member => [
+      String(member._id || ''),
+      String(member.fullName || ''),
+      String(member.phone || ''),
+      String(member.email || ''),
+      member.joiningDate
+        ? new Date(member.joiningDate).toLocaleDateString('en-IN')
+        : '',
+      String(member.membership?.planId?.planName || ''),
+      String(member.membership?.paymentStatus || ''),
+      String(member.status || '')
+    ]);
+  }
+
+  private getExportContext(): { businessName: string; generatedAt: string } {
+    const businessJson = localStorage.getItem('business');
+    let businessName = this.appName;
+    if (businessJson) {
+      try {
+        businessName = JSON.parse(businessJson).businessName || this.appName;
+      } catch (error) {
+        console.error('Unable to read business name for member export:', error);
+      }
+    }
+    return {
+      businessName,
+      generatedAt: new Date().toLocaleString('en-IN')
+    };
+  }
+
+  private getReportTitle(): string {
+    const selectedCount = this.selectedMemberRecords.size;
+    return selectedCount > 0
+      ? `Selected Members Report (${selectedCount})`
+      : 'Members Report';
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, character => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[character] || character);
+  }
+
+  private openReportWindow(printAfterLoad: boolean): Window | null {
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) {
+      this.exportErrorMessage =
+        'The report window was blocked. Allow pop-ups and try again.';
+      return null;
+    }
+
+    this.exportLoading = true;
+    this.exportErrorMessage = '';
+    this.getExportRows()
+      .pipe(finalize(() => this.exportLoading = false))
+      .subscribe({
+        next: members => {
+          const records = this.toExportRecords(members);
+          const context = this.getExportContext();
+          const headers = [
+            'Member ID',
+            'Name',
+            'Phone',
+            'Email',
+            'Joining Date',
+            'Membership Plan',
+            'Payment Status',
+            'Member Status'
+          ];
+          const rows = records.map(record =>
+            `<tr>${record.map(value => `<td>${this.escapeHtml(value)}</td>`).join('')}</tr>`
+          ).join('');
+          reportWindow.document.open();
+          reportWindow.document.write(`<!doctype html>
+            <html><head><meta charset="utf-8"><title>${this.escapeHtml(this.getReportTitle())}</title>
+            <style>
+              @page { size: landscape; margin: 14mm; }
+              body { font-family: Arial, sans-serif; color: #202124; padding: 18px; }
+              h1 { margin: 0 0 6px; color: #b51f2b; font-size: 22px; }
+              h2 { margin: 0 0 8px; font-size: 17px; }
+              .meta { color: #666; font-size: 11px; margin-bottom: 18px; }
+              table { width: 100%; border-collapse: collapse; }
+              th { background: #252630; color: #fff; text-align: left; }
+              th, td { padding: 8px; border: 1px solid #d8d8d8; font-size: 10px; }
+              tbody tr:nth-child(even) { background: #f5f6f8; }
+              .count { margin-top: 12px; color: #555; font-size: 11px; }
+              @media screen { body { max-width: 1200px; margin: auto; } }
+            </style></head><body>
+            <h1>${this.escapeHtml(context.businessName)}</h1>
+            <h2>${this.escapeHtml(this.getReportTitle())}</h2>
+            <div class="meta">Generated: ${this.escapeHtml(context.generatedAt)}</div>
+            <table><thead><tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr></thead>
+            <tbody>${rows || `<tr><td colspan="${headers.length}">No matching members.</td></tr>`}</tbody></table>
+            <div class="count">Total members: ${records.length}</div>
+            </body></html>`);
+          reportWindow.document.close();
+          if (printAfterLoad) {
+            reportWindow.focus();
+            reportWindow.print();
+          }
+        },
+        error: error => {
+          console.error('Member report generation error:', error);
+          this.exportErrorMessage =
+            error.message || 'Unable to prepare the member report.';
+          reportWindow.close();
+        }
+      });
+    return reportWindow;
+  }
+
+  exportPdf(): void {
+    this.downloadExportFile('pdf');
+  }
+
+  printReport(): void {
+    this.openReportWindow(true);
+  }
+
+  exportCsv(): void {
+    this.downloadExportFile('csv');
+  }
+
+  exportExcel(): void {
+    this.downloadExportFile('excel');
+  }
+
+  private downloadExportFile(format: 'csv' | 'excel' | 'pdf'): void {
+    if (this.exportLoading) return;
+    this.exportLoading = true;
+    this.exportErrorMessage = '';
+    this.getExportRows()
+      .pipe(finalize(() => this.exportLoading = false))
+      .subscribe({
+        next: members => {
+          const records = this.toExportRecords(members);
+          const headers = [
+            'Member ID',
+            'Name',
+            'Phone',
+            'Email',
+            'Joining Date',
+            'Membership Plan',
+            'Payment Status',
+            'Member Status'
+          ];
+          const context = this.getExportContext();
+          const title = this.getReportTitle();
+          if (format === 'pdf') {
+            this.createPdf(headers, records, context, title);
+            return;
+          }
+          const content = format === 'csv'
+            ? this.createCsv(headers, records, context, title)
+            : this.createExcelXml(headers, records, context, title);
+          const blob = new Blob(
+            [content],
+            { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/vnd.ms-excel;charset=utf-8' }
+          );
+          this.downloadBlob(
+            blob,
+            `members-${new Date().toISOString().slice(0, 10)}.${format === 'csv' ? 'csv' : 'xls'}`
+          );
+        },
+        error: error => {
+          console.error('Member export error:', error);
+          this.exportErrorMessage =
+            error.message || 'Unable to export matching members.';
+        }
+      });
+  }
+
+  private createPdf(
+    headers: string[],
+    records: string[][],
+    context: { businessName: string; generatedAt: string },
+    title: string
+  ): void {
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 10;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const columnWidths = [0.11, 0.12, 0.1, 0.17, 0.12, 0.15, 0.12, 0.11]
+      .map(weight => (pageWidth - margin * 2) * weight);
+    const headerHeight = 10;
+    let y = 16;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(17);
+    pdf.setTextColor(181, 31, 43);
+    const businessName = pdf.splitTextToSize(
+      context.businessName,
+      pageWidth - margin * 2
+    );
+    pdf.text(businessName, margin, y);
+    y += Math.max(8, businessName.length * 7);
+    pdf.setFontSize(12);
+    pdf.setTextColor(32, 33, 36);
+    pdf.text(title, margin, y);
+    y += 6;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text(`Generated: ${context.generatedAt}`, margin, y);
+    y += 7;
+
+    const drawHeader = (): void => {
+      let x = margin;
+      headers.forEach((header, index) => {
+        const width = columnWidths[index];
+        pdf.setFillColor(37, 38, 48);
+        pdf.setDrawColor(216, 216, 216);
+        pdf.rect(x, y, width, headerHeight, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(
+          pdf.splitTextToSize(header, width - 3),
+          x + 1.5,
+          y + 4
+        );
+        x += width;
+      });
+      y += headerHeight;
+    };
+
+    drawHeader();
+    const pdfRecords = records.length
+      ? records
+      : [['No matching members.', '', '', '', '', '', '', '']];
+    pdfRecords.forEach((record, rowIndex) => {
+      const wrapped = record.map((value, index) =>
+        pdf.splitTextToSize(value || '—', columnWidths[index] - 3)
+      );
+      const lineCount = Math.max(...wrapped.map(lines => lines.length));
+      const rowHeight = Math.max(7, lineCount * 3.5 + 3);
+      if (y + rowHeight > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+        drawHeader();
+      }
+
+      let x = margin;
+      record.forEach((_value, index) => {
+        const width = columnWidths[index];
+        pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 245, rowIndex % 2 === 0 ? 255 : 246, rowIndex % 2 === 0 ? 255 : 248);
+        pdf.setDrawColor(216, 216, 216);
+        pdf.rect(x, y, width, rowHeight, 'FD');
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.setTextColor(32, 33, 36);
+        pdf.text(wrapped[index], x + 1.5, y + 4);
+        x += width;
+      });
+      y += rowHeight;
+    });
+
+    pdf.save(`members-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  private createCsv(
+    headers: string[],
+    records: string[][],
+    context: { businessName: string; generatedAt: string },
+    title: string
+  ): string {
+    const rows = [
+      [context.businessName],
+      [title],
+      [`Generated: ${context.generatedAt}`],
+      [],
+      headers,
+      ...records
+    ];
+    return `\uFEFF${rows.map(row =>
+      row.map(value => {
+        const text = String(value);
+        const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+        return `"${safeText.replace(/"/g, '""')}"`;
+      }).join(',')
+    ).join('\r\n')}`;
+  }
+
+  private createExcelXml(
+    headers: string[],
+    records: string[][],
+    context: { businessName: string; generatedAt: string },
+    title: string
+  ): string {
+    const xmlEscape = (value: string) =>
+      this.escapeHtml(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    const row = (cells: string[], style?: string) =>
+      `<Row>${cells.map(value =>
+        `<Cell${style ? ` ss:StyleID="${style}"` : ''}><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`
+      ).join('')}</Row>`;
+    return `<?xml version="1.0"?>
+      <?mso-application progid="Excel.Sheet"?>
+      <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+       xmlns:o="urn:schemas-microsoft-com:office:office"
+       xmlns:x="urn:schemas-microsoft-com:office:excel"
+       xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+       <Styles>
+        <Style ss:ID="Title"><Font ss:Bold="1" ss:Size="16" ss:Color="#B51F2B"/></Style>
+        <Style ss:ID="Heading"><Font ss:Bold="1" ss:Size="12"/></Style>
+        <Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#252630" ss:Pattern="Solid"/></Style>
+       </Styles>
+       <Worksheet ss:Name="Members"><Table>
+        ${row([context.businessName], 'Title')}
+        ${row([title], 'Heading')}
+        ${row([`Generated: ${context.generatedAt}`])}
+        <Row/>
+        ${row(headers, 'Header')}
+        ${records.map(record => row(record)).join('')}
+       </Table></Worksheet></Workbook>`;
+  }
+
+  private downloadBlob(blob: Blob, fileName: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   // Open Add Form
   openAddForm(): void {
     this.isEditMode = false;
@@ -306,16 +815,6 @@ totalDueAmount = 0;
         return;
       }
 
-      const amount = Number(this.memberForm.paidAmount);
-
-      if (
-        !Number.isFinite(amount) ||
-        amount < 0 ||
-        amount > Number(this.selectedPlan?.price)
-      ) {
-        alert('Please enter a valid paid amount');
-        return;
-      }
     }
 
     this.saving = true;
@@ -370,7 +869,7 @@ totalDueAmount = 0;
       memberId,
       planId: this.memberForm.planId,
       startDate: this.memberForm.membershipStartDate,
-      paidAmount: Number(this.memberForm.paidAmount || 0)
+      paidAmount: 0
     };
 
     this.planService.assignMembership(membershipData).subscribe({
@@ -378,7 +877,7 @@ totalDueAmount = 0;
         this.saving = false;
         this.historyCache.delete(memberId);
         this.financialCache.delete(memberId);
-        alert('Member and membership saved successfully!');
+        alert('Member and membership saved successfully. Collect payment from Payments & Fees.');
         this.closeForm();
         this.loadMembers();
       },
@@ -410,6 +909,7 @@ totalDueAmount = 0;
           this.currentPage--;
         }
 
+        this.selectedMemberRecords.delete(member._id);
         this.loadMembers();
       },
       error: (error) => {
@@ -679,152 +1179,67 @@ printReceipt(payment: any): void {
   const receiptWindow = window.open('', '_blank', 'width=800,height=700');
 
   if (!receiptWindow) {
-    alert('Please allow pop-ups to view the receipt.');
+    this.financialError = 'Please allow pop-ups to view the verified receipt.';
     return;
   }
 
-  const memberName = this.selectedFinancialMember?.fullName || 'Member';
-  const memberPhone = this.selectedFinancialMember?.phone || '-';
+  this.paymentService.getPaymentReceipt(payment._id).subscribe({
+    next: response => {
+      const receipt = response?.receipt;
+      if (!response?.success || !receipt) {
+        receiptWindow.close();
+        this.financialError = 'Verified receipt details were not returned.';
+        return;
+      }
 
-  const escapeHtml = (value: any): string => {
-    return String(value ?? '').replace(/[&<>"']/g, (char) => {
-      const entities: { [key: string]: string } = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      };
-
-      return entities[char];
-    });
-  };
-
-  receiptWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Payment Receipt</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          padding: 35px;
-          color: #222;
-        }
-
-        .receipt {
-          max-width: 600px;
-          margin: auto;
-          border: 1px solid #ddd;
-          padding: 30px;
-          border-radius: 10px;
-        }
-
-        h1 {
-          text-align: center;
-          color: #d71920;
-        }
-
-        .subtitle {
-          text-align: center;
-          color: #666;
-        }
-
-        .row {
-          display: flex;
-          justify-content: space-between;
-          padding: 12px 0;
-          border-bottom: 1px solid #eee;
-        }
-
-        .amount {
-          font-size: 24px;
-          font-weight: bold;
-          color: #d71920;
-        }
-
-        .footer {
-          text-align: center;
-          margin-top: 30px;
-          color: #777;
-        }
-
-        @media print {
-          button {
-            display: none;
-          }
-        }
-      </style>
-    </head>
-
-    <body>
-      <div class="receipt">
-        <h1>${escapeHtml(this.appName.toUpperCase())}</h1>
-        <p class="subtitle">Payment Receipt</p>
-
-        <hr>
-
-        <div class="row">
-          <strong>Member Name</strong>
-          <span>${escapeHtml(memberName)}</span>
-        </div>
-
-        <div class="row">
-          <strong>Phone</strong>
-          <span>${escapeHtml(memberPhone)}</span>
-        </div>
-
-        <div class="row">
-          <strong>Receipt Number</strong>
-          <span>${escapeHtml(payment.receiptNumber || '-')}</span>
-        </div>
-
-        <div class="row">
-          <strong>Payment Date</strong>
-          <span>${escapeHtml(
-            payment.paymentDate
-              ? new Date(payment.paymentDate).toLocaleDateString('en-IN')
-              : '-'
-          )}</span>
-        </div>
-
-        <div class="row">
-          <strong>Payment Method</strong>
-          <span>${escapeHtml(payment.paymentMethod || '-')}</span>
-        </div>
-
-        <div class="row">
-          <strong>Payment Type</strong>
-          <span>${escapeHtml(payment.paymentType || '-')}</span>
-        </div>
-
-        <div class="row">
-          <strong>Transaction ID</strong>
-          <span>${escapeHtml(payment.transactionId || '-')}</span>
-        </div>
-
-        <div class="row">
-          <strong>Payment Status</strong>
-          <span>${escapeHtml(payment.status || '-')}</span>
-        </div>
-
-        <div class="row">
-          <strong>Total Amount</strong>
-          <span class="amount">₹${escapeHtml(payment.amount)}</span>
-        </div>
-
-        <div class="footer">
-          <p>Thank you!</p>
-          <p>${escapeHtml(this.appName)}</p>
-        </div>
-
-        <button onclick="window.print()">Print Receipt</button>
-      </div>
-    </body>
-    </html>
-  `);
-
-  receiptWindow.document.close();
+      const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[char] || char);
+      const rows = [
+        ['Receipt number', receipt.receiptNumber],
+        ['Member', receipt.member?.fullName],
+        ['Member ID', receipt.member?.id],
+        ['Phone', receipt.member?.phone],
+        ['Membership plan', receipt.membership?.planName],
+        ['Transaction ID', receipt.payment?.transactionId],
+        ['Payment method', receipt.payment?.paymentMethod],
+        ['Payment date', receipt.paymentDate ? new Date(receipt.paymentDate).toLocaleDateString('en-IN') : '-'],
+        ['Amount received', `INR ${Number(receipt.payment?.amountReceived || 0).toFixed(2)}`],
+        ['Total membership fees', `INR ${Number(receipt.summary?.totalMembershipFees || 0).toFixed(2)}`],
+        ['Total amount paid', `INR ${Number(receipt.summary?.totalAmountPaid || 0).toFixed(2)}`],
+        ['Pending amount', `INR ${Number(receipt.summary?.pendingAmount || 0).toFixed(2)}`],
+        ['Payment status', receipt.summary?.status]
+      ];
+      const taxRows = receipt.taxInvoice ? [
+        ['Tax invoice', receipt.taxInvoice.invoiceNumber],
+        ['Taxable amount', `INR ${Number(receipt.taxInvoice.taxableAmount || 0).toFixed(2)}`],
+        ['GST rate', `${receipt.taxInvoice.gstPercentage}%`],
+        [receipt.taxInvoice.componentMode, `INR ${Number(receipt.taxInvoice.totalTax || 0).toFixed(2)}`],
+        ['Invoice total', `INR ${Number(receipt.taxInvoice.totalAmount || 0).toFixed(2)}`]
+      ] : [];
+      receiptWindow.document.open();
+      receiptWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>
+        <style>body{font:14px Arial,sans-serif;color:#252525;padding:28px}.receipt{max-width:680px;margin:auto;border:1px solid #ddd;padding:30px}
+        h1{color:#b51f2b}h2{font-size:15px;border-bottom:1px solid #ddd;padding-bottom:8px;margin-top:24px}
+        .sub{color:#777;font-size:12px}.row{display:flex;justify-content:space-between;gap:15px;padding:8px 0;border-bottom:1px solid #eee}
+        .row span{color:#777}.row strong{text-align:right}.footer{text-align:center;color:#777;margin-top:28px}
+        button{display:block;margin:20px auto;background:#b51f2b;color:white;padding:10px 18px;border:0;border-radius:6px}
+        @media print{button{display:none}body{padding:0}}</style></head><body><main class="receipt">
+        <h1>${escape(receipt.business?.businessName || this.appName)}</h1>
+        <div class="sub">${escape(receipt.business?.address || '')} · ${escape(receipt.business?.phone || '')} · ${escape(receipt.business?.email || '')}</div>
+        <h2>Payment Receipt</h2>${rows.map(([label, value]) => `<div class="row"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join('')}
+        ${taxRows.length ? `<h2>GST Tax Invoice</h2>${taxRows.map(([label, value]) => `<div class="row"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join('')}` : ''}
+        <div class="footer">Thank you for being a member of our gym.<p>Receipt confirms money received; the tax invoice, if shown, records the taxable supply.</p></div>
+        <button onclick="window.print()">Print Receipt</button></main></body></html>`);
+      receiptWindow.document.close();
+    },
+    error: error => {
+      console.error('Verified member receipt loading error:', error);
+      receiptWindow.close();
+      this.financialError = error.error?.message || 'Unable to load the verified receipt.';
+      this.changeDetector.markForCheck();
+    }
+  });
 }
 
 

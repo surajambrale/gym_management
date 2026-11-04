@@ -7,7 +7,10 @@ import { finalize } from 'rxjs';
 import { PaymentService } from '../../services/payment';
 import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
+import { DashboardService } from '../../services/dashboard';
 import { environment } from '../../../environments/environment';
+import { jsPDF } from 'jspdf';
+import { GST_STATES } from '../../utils/gst-states';
 
 @Component({
   selector: 'app-payments',
@@ -41,9 +44,12 @@ export class Payments implements OnInit, OnChanges {
   membersLoading = false;
   membershipsLoading = false;
   savingPayment = false;
+  receiptLoadingId = '';
 
   errorMessage = '';
   successMessage = '';
+  receiptErrorMessage = '';
+  readonly gstStates = GST_STATES;
 
   showPaymentForm = false;
 
@@ -56,13 +62,15 @@ export class Payments implements OnInit, OnChanges {
     paymentType: 'Membership Fee',
     transactionId: '',
     paymentDate: new Date().toISOString().slice(0, 10),
-    notes: ''
+    notes: '',
+    placeOfSupplyStateCode: ''
   };
 
   constructor(
     private paymentService: PaymentService,
     private memberService: MemberService,
-    private membershipPlanService: MembershipPlanService
+    private membershipPlanService: MembershipPlanService,
+    private dashboardService: DashboardService
   ) {}
 
   ngOnInit(): void {
@@ -228,6 +236,8 @@ export class Payments implements OnInit, OnChanges {
   // Select membership
   onMembershipChange(): void {
     this.paymentForm.amount = this.pendingAmount || null;
+    this.paymentForm.placeOfSupplyStateCode =
+      this.selectedMembership?.placeOfSupplyStateCode || '';
   }
 
   // Save payment
@@ -260,6 +270,14 @@ export class Payments implements OnInit, OnChanges {
       this.errorMessage = 'Please select a payment method.';
       return;
     }
+    if (
+      this.selectedMembership?.gstSnapshot?.enabled &&
+      !this.selectedMembership.placeOfSupplyStateCode &&
+      !this.paymentForm.placeOfSupplyStateCode
+    ) {
+      this.errorMessage = 'Select the place-of-supply state for the GST invoice.';
+      return;
+    }
 
     const paymentData = {
       memberId: this.selectedMemberId,
@@ -269,7 +287,8 @@ export class Payments implements OnInit, OnChanges {
       paymentType: this.paymentForm.paymentType,
       transactionId: this.paymentForm.transactionId,
       paymentDate: this.paymentForm.paymentDate,
-      notes: this.paymentForm.notes
+      notes: this.paymentForm.notes,
+      placeOfSupplyStateCode: this.paymentForm.placeOfSupplyStateCode
     };
 
     this.savingPayment = true;
@@ -280,6 +299,7 @@ export class Payments implements OnInit, OnChanges {
 
         if (response.success) {
           this.successMessage = 'Payment recorded successfully!';
+          this.dashboardService.requestRefresh();
 
           this.closePaymentForm();
           this.loadPayments(1);
@@ -303,7 +323,8 @@ export class Payments implements OnInit, OnChanges {
       paymentType: 'Membership Fee',
       transactionId: '',
       paymentDate: new Date().toISOString().slice(0, 10),
-      notes: ''
+      notes: '',
+      placeOfSupplyStateCode: ''
     };
   }
 
@@ -340,7 +361,259 @@ export class Payments implements OnInit, OnChanges {
     return new Date(date).toLocaleDateString('en-IN');
   }
 
-  
+  generateReceipt(payment: any): void {
+    this.loadReceipt(payment, 'download');
+  }
+
+  viewReceipt(payment: any): void {
+    this.loadReceipt(payment, 'view');
+  }
+
+  printVerifiedReceipt(payment: any): void {
+    this.loadReceipt(payment, 'print');
+  }
+
+  private loadReceipt(payment: any, action: 'view' | 'download' | 'print'): void {
+    if (
+      !payment?._id ||
+      !['Success', 'Refunded'].includes(payment.status) ||
+      this.receiptLoadingId
+    ) return;
+
+    const popup = action === 'download'
+      ? null
+      : window.open('', '_blank', 'width=900,height=900');
+    if (action !== 'download' && !popup) {
+      this.receiptErrorMessage = 'Please allow pop-ups to view or print the receipt.';
+      return;
+    }
+
+    this.receiptLoadingId = payment._id;
+    this.receiptErrorMessage = '';
+    this.paymentService.getPaymentReceipt(payment._id)
+      .pipe(finalize(() => this.receiptLoadingId = ''))
+      .subscribe({
+        next: response => {
+          if (!response?.success || !response.receipt) {
+            popup?.close();
+            this.receiptErrorMessage = 'Verified receipt details were not returned.';
+            return;
+          }
+          if (action === 'download') {
+            this.createReceiptPdf(response.receipt);
+          } else if (popup) {
+            this.writeReceiptWindow(popup, response.receipt, action === 'print');
+          }
+        },
+        error: error => {
+          console.error('Verified receipt loading error:', error);
+          popup?.close();
+          this.receiptErrorMessage =
+            error.error?.message || 'Unable to load the verified payment receipt.';
+        }
+      });
+  }
+
+  private money(value: unknown): string {
+    return `INR ${Number(value || 0).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  }
+
+  private createReceiptPdf(receipt: any): void {
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+    const margin = 16;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    let y = 17;
+    const line = (label: string, value: unknown, emphasize = false): void => {
+      const labelWidth = 58;
+      const valueLines = pdf.splitTextToSize(
+        String(value || '-'),
+        pageWidth - margin * 2 - labelWidth
+      );
+      if (y + Math.max(7, valueLines.length * 4) > 280) {
+        pdf.addPage();
+        y = 18;
+      }
+      pdf.setFont('helvetica', emphasize ? 'bold' : 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(95, 95, 95);
+      pdf.text(label, margin, y);
+      pdf.setTextColor(emphasize ? 181 : 40, emphasize ? 31 : 40, emphasize ? 43 : 40);
+      pdf.text(valueLines, margin + labelWidth, y);
+      y += Math.max(7, valueLines.length * 4);
+    };
+    const section = (title: string): void => {
+      y += 3;
+      pdf.setDrawColor(225, 225, 225);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 7;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(37, 38, 48);
+      pdf.text(title, margin, y);
+      y += 7;
+    };
+    const formatDate = (date: string | Date) =>
+      date ? new Date(date).toLocaleDateString('en-IN') : '-';
+
+    pdf.setFillColor(181, 31, 43);
+    pdf.roundedRect(margin, y, 14, 14, 2, 2, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text('SS', margin + 3.2, y + 9);
+    pdf.setFontSize(16);
+    pdf.setTextColor(181, 31, 43);
+    pdf.text(
+      pdf.splitTextToSize(receipt.business?.businessName || this.appName, pageWidth - margin * 2 - 20),
+      margin + 20,
+      y + 6
+    );
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('PAYMENT RECEIPT', margin + 20, y + 12);
+    y += 22;
+
+    line('Business address', receipt.business?.address);
+    line('Phone / Email', `${receipt.business?.phone || '-'} / ${receipt.business?.email || '-'}`);
+    if (receipt.business?.gstinNumber) line('GSTIN', receipt.business.gstinNumber);
+    section('Receipt Details');
+    line('Receipt number', receipt.receiptNumber);
+    line('Receipt date', formatDate(receipt.receiptDate));
+    line('Transaction ID', receipt.payment?.transactionId);
+    line('Payment method', receipt.payment?.paymentMethod);
+    line('Payment date', formatDate(receipt.paymentDate));
+    section('Member Details');
+    line('Member name', receipt.member?.fullName);
+    line('Member ID', receipt.member?.id);
+    line('Phone number', receipt.member?.phone);
+    line('Membership plan', receipt.membership?.planName);
+    section('Payment Summary');
+    line('Total membership fees', this.money(receipt.summary?.totalMembershipFees));
+    line('Amount received this transaction', this.money(receipt.payment?.amountReceived), true);
+    line('Total amount paid', this.money(receipt.summary?.totalAmountPaid));
+    line('Pending amount', this.money(receipt.summary?.pendingAmount), true);
+    line('Payment status', receipt.summary?.status, true);
+
+    if (receipt.taxInvoice) {
+      section(`GST Tax Invoice · ${receipt.taxInvoice.invoiceNumber}`);
+      line('Invoice date', formatDate(receipt.taxInvoice.issueDate));
+      line('Legal business name', receipt.taxInvoice.legalBusinessName);
+      line('Taxable amount', this.money(receipt.taxInvoice.taxableAmount));
+      line('GST rate', `${receipt.taxInvoice.gstPercentage}%`);
+      line('Place of supply', `${receipt.taxInvoice.placeOfSupplyStateCode} (${receipt.taxInvoice.componentMode})`);
+      if (receipt.taxInvoice.componentMode === 'IGST') {
+        line('IGST', this.money(receipt.taxInvoice.igst));
+      } else {
+        line('CGST', this.money(receipt.taxInvoice.cgst));
+        line('SGST', this.money(receipt.taxInvoice.sgst));
+      }
+      line('Total GST', this.money(receipt.taxInvoice.totalTax));
+      line('Tax invoice total', this.money(receipt.taxInvoice.totalAmount), true);
+    }
+
+    if (receipt.currentPaymentStatus) {
+      y += 2;
+      line('Current balance (updated)', this.money(receipt.currentPaymentStatus.pendingAmount));
+    }
+    y += 7;
+    pdf.setFont('helvetica', 'italic');
+    pdf.setFontSize(9);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('Thank you for being a member of our gym.', margin, y);
+    if (receipt.taxInvoice) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7);
+      pdf.text('Payment receipt confirms money received; the GST tax invoice records the taxable supply.', margin, y + 5);
+    }
+    pdf.save(`receipt-${String(receipt.receiptNumber || 'payment').replace(/[^A-Za-z0-9_-]/g, '')}.pdf`);
+  }
+
+  private writeReceiptWindow(popup: Window, receipt: any, autoPrint: boolean): void {
+    const escape = (value: unknown) => this.escapeHtml(value);
+    const business = receipt.business || {};
+    const payment = receipt.payment || {};
+    const member = receipt.member || {};
+    const summary = receipt.summary || {};
+    const invoice = receipt.taxInvoice;
+    const safeLogoUrl = /^https:\/\//i.test(String(business.logoUrl || ''))
+      ? business.logoUrl
+      : '';
+    const row = (label: string, value: unknown, highlight = false) =>
+      `<div class="row ${highlight ? 'highlight' : ''}"><span>${escape(label)}</span><strong>${escape(value || '-')}</strong></div>`;
+    const formatDate = (date: string | Date) =>
+      date ? new Date(date).toLocaleDateString('en-IN') : '-';
+    const invoiceRows = invoice
+      ? [
+          row('Invoice number', invoice.invoiceNumber),
+          row('Invoice date', formatDate(invoice.issueDate)),
+          row('Legal business name', invoice.legalBusinessName),
+          row('GSTIN', invoice.gstinNumber),
+          row('Taxable amount', this.money(invoice.taxableAmount)),
+          row('GST rate', `${invoice.gstPercentage}%`),
+          row('Place of supply', `${invoice.placeOfSupplyStateCode} · ${invoice.componentMode}`),
+          invoice.componentMode === 'IGST'
+            ? row('IGST', this.money(invoice.igst))
+            : `${row('CGST', this.money(invoice.cgst))}${row('SGST', this.money(invoice.sgst))}`,
+          row('Total GST', this.money(invoice.totalTax)),
+          row('Tax invoice total', this.money(invoice.totalAmount), true)
+        ].join('')
+      : '';
+
+    popup.document.open();
+    popup.document.write(`<!doctype html><html><head><meta charset="utf-8">
+      <title>Payment Receipt ${escape(receipt.receiptNumber)}</title>
+      <style>
+        *{box-sizing:border-box}body{margin:0;padding:28px;background:#f4f5f7;color:#252525;font:14px Arial,sans-serif}
+        .receipt{max-width:760px;margin:auto;background:#fff;padding:36px;border:1px solid #e6e6e6}
+        header{display:flex;align-items:center;gap:15px;border-bottom:3px solid #b51f2b;padding-bottom:18px}
+        header img{max-width:70px;max-height:60px;object-fit:contain}header h1{margin:0 0 5px;color:#b51f2b;font-size:23px}
+        .subtitle{font-size:11px;color:#777;letter-spacing:1px}.section{margin-top:22px}
+        .section h2{margin:0 0 8px;padding-bottom:8px;border-bottom:1px solid #e7e7e7;font-size:14px}
+        .row{display:flex;justify-content:space-between;gap:18px;padding:8px 0;border-bottom:1px solid #f0f0f0}
+        .row span{color:#777}.row strong{text-align:right;overflow-wrap:anywhere}.highlight{color:#b51f2b;background:#fff7f6;padding:10px}
+        .footer{text-align:center;margin-top:30px;color:#777;font-size:12px}.actions{text-align:center;margin:20px auto}
+        .actions button{padding:10px 18px;border:0;border-radius:6px;background:#b51f2b;color:#fff;cursor:pointer}
+        .notice{font-size:11px;color:#777}@media print{body{padding:0;background:#fff}.receipt{border:0}.actions{display:none}@page{size:A4;margin:14mm}}
+      </style></head><body><main class="receipt">
+      <header>${safeLogoUrl ? `<img src="${escape(safeLogoUrl)}" alt="Business logo">` : '<div style="background:#b51f2b;color:#fff;padding:12px 15px;border-radius:8px;font-weight:bold">SS</div>'}
+        <div><h1>${escape(business.businessName || this.appName)}</h1>
+        <div class="subtitle">PAYMENT RECEIPT · ${escape(business.address || '')}</div>
+        <div class="subtitle">${escape(business.phone || '')} ${escape(business.email || '')}</div>
+        ${business.gstinNumber ? `<div class="subtitle">GSTIN: ${escape(business.gstinNumber)}</div>` : ''}</div>
+      </header>
+      <section class="section"><h2>Receipt details</h2>
+        ${row('Receipt number', receipt.receiptNumber)}
+        ${row('Receipt date', formatDate(receipt.receiptDate))}
+        ${row('Transaction ID', payment.transactionId)}
+        ${row('Payment method', payment.paymentMethod)}
+        ${row('Payment date', formatDate(receipt.paymentDate))}
+      </section>
+      <section class="section"><h2>Member details</h2>
+        ${row('Member name', member.fullName)}${row('Member ID', member.id)}
+        ${row('Phone number', member.phone)}${row('Membership plan', receipt.membership?.planName)}
+      </section>
+      <section class="section"><h2>Payment summary</h2>
+        ${row('Total membership fees', this.money(summary.totalMembershipFees))}
+        ${row('Amount received this transaction', this.money(payment.amountReceived), true)}
+        ${row('Total amount paid', this.money(summary.totalAmountPaid))}
+        ${row('Pending amount', this.money(summary.pendingAmount), true)}
+        ${row('Payment status', summary.status, true)}
+      </section>
+      ${invoice ? `<section class="section"><h2>GST Tax Invoice</h2>${invoiceRows}</section>` : ''}
+      <footer class="footer"><p>Thank you for being a member of our gym.</p>
+        <p class="notice">Payment receipt confirms money received${invoice ? '; the GST tax invoice records the taxable supply.' : '.'}</p></footer>
+      </main><div class="actions"><button onclick="window.print()">Print / Save as PDF</button></div>
+      </body></html>`);
+    popup.document.close();
+    if (autoPrint) {
+      popup.focus();
+      popup.print();
+    }
+  }
+
   // Escape dynamic values before inserting them into receipt HTML
   escapeHtml(value: any): string {
     return String(value ?? '').replace(/[&<>"']/g, (char) => {
@@ -358,6 +631,8 @@ export class Payments implements OnInit, OnChanges {
 
   // Print Payment Receipt
   printReceipt(payment: any): void {
+    this.printVerifiedReceipt(payment);
+    return;
 
     if (!payment || payment.status !== 'Success') {
       return;
@@ -414,6 +689,7 @@ export class Payments implements OnInit, OnChanges {
       alert('Please allow pop-ups to print your receipt.');
       return;
     }
+    const receiptPopup = popup!;
 
     const receiptHTML = `
       <!DOCTYPE html>
@@ -642,9 +918,9 @@ export class Payments implements OnInit, OnChanges {
       </html>
     `;
 
-    popup.document.open();
-    popup.document.write(receiptHTML);
-    popup.document.close();
+    receiptPopup.document.open();
+    receiptPopup.document.write(receiptHTML);
+    receiptPopup.document.close();
   }
 
 }

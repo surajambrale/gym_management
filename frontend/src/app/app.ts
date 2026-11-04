@@ -57,12 +57,21 @@ export class App implements OnInit, OnDestroy {
   dashboardLoading = false;
   dashboardError = '';
   todayAttendance = 0;
+  dashboardTimeZone = 'Asia/Kolkata';
+  collections: {
+    today: number;
+    week: number;
+    month: number;
+    monthlyRevenue: Array<{ key: string; month: string; revenue: number }>;
+  } | null = null;
   private dashboardLoadedAt = 0;
   private dashboardToken = '';
   private lastVerifiedToken = '';
 
   private sessionVerificationStarted = false;
   private routerSubscription?: Subscription;
+  private dashboardRefreshSubscription?: Subscription;
+  private dashboardRefreshQueued = false;
 
   // SIDEBAR MENU GROUPS
   menuGroups = [
@@ -100,6 +109,17 @@ export class App implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.dashboardRefreshSubscription = this.dashboardService.refreshRequested$
+      .subscribe(() => {
+        if (!this.isAuthenticated) return;
+        if (this.selectedMenu === 'Dashboard') {
+          if (this.dashboardLoading) {
+            this.dashboardRefreshQueued = true;
+          } else {
+            this.loadDashboardData(true);
+          }
+        }
+      });
 
     // Check session whenever route changes.
     this.routerSubscription = this.router.events
@@ -116,6 +136,7 @@ export class App implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.routerSubscription?.unsubscribe();
+    this.dashboardRefreshSubscription?.unsubscribe();
   }
 
   // SESSION VERIFICATION
@@ -185,6 +206,7 @@ export class App implements OnInit, OnDestroy {
             if (this.dashboardToken && this.dashboardToken !== token) {
               this.stats = [];
               this.recentMembers = [];
+              this.collections = null;
               this.dashboardLoadedAt = 0;
             }
 
@@ -257,6 +279,8 @@ export class App implements OnInit, OnDestroy {
     this.recentMembers = [];
     this.dashboardError = '';
     this.todayAttendance = 0;
+    this.dashboardTimeZone = 'Asia/Kolkata';
+    this.collections = null;
 
     this.ownerName = 'Admin';
     this.businessName = this.appName;
@@ -274,7 +298,7 @@ export class App implements OnInit, OnDestroy {
     this.mobileMenuOpen = false;
 
     if (name === 'Dashboard') {
-      this.loadDashboardData();
+      this.loadDashboardData(true);
     }
   }
 
@@ -315,6 +339,10 @@ export class App implements OnInit, OnDestroy {
         finalize(() => {
           this.dashboardLoading = false;
           this.changeDetector.markForCheck();
+          if (this.dashboardRefreshQueued) {
+            this.dashboardRefreshQueued = false;
+            this.loadDashboardData(true);
+          }
         })
       )
       .subscribe({
@@ -329,6 +357,21 @@ export class App implements OnInit, OnDestroy {
           }
 
           const data = response.stats;
+          this.dashboardTimeZone = response.timeZone || 'Asia/Kolkata';
+          this.collections = response.collections
+            ? {
+                today: Number(response.collections.today || 0),
+                week: Number(response.collections.week || 0),
+                month: Number(response.collections.month || 0),
+                monthlyRevenue: Array.isArray(response.collections.monthlyRevenue)
+                  ? response.collections.monthlyRevenue.map((item: any) => ({
+                      key: String(item.key),
+                      month: String(item.month),
+                      revenue: Number(item.revenue || 0)
+                    }))
+                  : []
+              }
+            : null;
           this.dashboardLoadedAt = Date.now();
           this.dashboardToken = localStorage.getItem('token') || '';
 
@@ -386,10 +429,41 @@ export class App implements OnInit, OnDestroy {
         error: (error) => {
 
           console.error('Dashboard API Error:', error);
+          this.collections = null;
 
           this.dashboardError =
             'Unable to load dashboard data. Please try again.';
         }
       });
+  }
+
+  get maxMonthlyRevenue(): number {
+    return Math.max(
+      0,
+      ...(this.collections?.monthlyRevenue.map(item => item.revenue) || [])
+    );
+  }
+
+  getRevenueBarHeight(revenue: number): number {
+    return this.maxMonthlyRevenue > 0
+      ? (revenue / this.maxMonthlyRevenue) * 100
+      : 0;
+  }
+
+  formatCurrency(amount: number): string {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    }).format(amount);
+  }
+
+  formatCompactCurrency(amount: number): string {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      notation: 'compact',
+      maximumFractionDigits: 1
+    }).format(amount);
   }
 }

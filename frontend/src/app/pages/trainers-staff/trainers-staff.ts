@@ -2,17 +2,44 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
+import { jsPDF } from 'jspdf';
 import { ManagementService } from '../../services/management';
+import { MemberService } from '../../services/member';
 
-interface TrainerStaffRecord {
+interface TeamRecord {
   _id: string;
   name: string;
   phone: string;
   email: string;
   role: 'Trainer' | 'Staff';
+  specialization?: string;
+  designation?: string;
+  department?: string;
+  joiningDate?: string;
+  salaryAmount?: number | null;
+  compensationType?: 'Salary' | 'Commission';
+  status: 'Active' | 'Inactive';
+  assignedMemberCount?: number;
+  assignedMembers?: Array<{ _id: string; fullName: string; phone: string }>;
+}
+
+interface TeamForm {
+  name: string;
+  phone: string;
+  email: string;
   specialization: string;
+  designation: string;
+  department: string;
+  joiningDate: string;
+  salaryAmount: number | null;
+  compensationType: 'Salary' | 'Commission';
   status: 'Active' | 'Inactive';
 }
+
+const todayString = (): string => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+};
 
 @Component({
   selector: 'app-trainers-staff',
@@ -22,97 +49,473 @@ interface TrainerStaffRecord {
   styleUrl: './trainers-staff.scss'
 })
 export class TrainersStaff implements OnInit {
-  records: TrainerStaffRecord[] = [];
+  trainers: TeamRecord[] = [];
+  staff: TeamRecord[] = [];
+  trainerTotal = 0;
+  staffTotal = 0;
+  trainerMatchTotal = 0;
+  staffMatchTotal = 0;
+  activeTrainerTotal = 0;
+  activeStaffTotal = 0;
+  trainerPage = 1;
+  staffPage = 1;
+  readonly pageSize = 10;
+  trainerPages = 0;
+  staffPages = 0;
+  trainerSearch = '';
+  staffSearch = '';
+  trainerStatus = '';
+  staffStatus = '';
   loading = false;
-  saving = false;
+  savingRole: 'Trainer' | 'Staff' | '' = '';
   errorMessage = '';
   successMessage = '';
-  editingId = '';
-  form = this.emptyForm();
+  showTrainerForm = false;
+  showStaffForm = false;
+  editingTrainerId = '';
+  editingStaffId = '';
+  trainerForm = this.emptyForm();
+  staffForm = this.emptyForm();
+  selectedRecord: TeamRecord | null = null;
+  assignmentTrainer: TeamRecord | null = null;
+  assignedMembers: Array<{ _id: string; fullName: string; phone: string; email?: string; status: string }> = [];
+  availableMembers: Array<{ _id: string; fullName: string; phone: string }> = [];
+  selectedMemberId = '';
+  assignmentLoading = false;
+  assigning = false;
+  reportLoading = false;
+  reportError = '';
+  reportRecords: TeamRecord[] = [];
+  staffByDesignation: Array<{
+    designation: string;
+    department: string;
+    total: number;
+    active: number;
+    inactive: number;
+  }> = [];
+  reportRole = '';
+  reportStatus = '';
+  reportPeriod = 'thisMonth';
+  reportFrom = todayString().slice(0, 7) + '-01';
+  reportTo = todayString();
+  reportAppliedFrom = '';
+  reportAppliedTo = '';
+  reportCapabilities = {
+    trainerAttendance: false,
+    staffAttendance: false,
+    batchAssignments: false,
+    salaryTransactions: false
+  };
+  private readonly businessName = this.readBusinessName();
 
-  constructor(private readonly management: ManagementService) {}
+  constructor(
+    private readonly management: ManagementService,
+    private readonly members: MemberService
+  ) {}
 
   ngOnInit(): void {
     this.load();
+    this.loadReport();
   }
 
-  private emptyForm() {
+  private emptyForm(): TeamForm {
     return {
       name: '',
       phone: '',
       email: '',
-      role: 'Trainer' as 'Trainer' | 'Staff',
       specialization: '',
-      status: 'Active' as 'Active' | 'Inactive'
+      designation: '',
+      department: '',
+      joiningDate: todayString(),
+      salaryAmount: null,
+      compensationType: 'Salary',
+      status: 'Active'
     };
   }
 
   load(): void {
     this.loading = true;
     this.errorMessage = '';
-    this.management.getStaff()
-      .pipe(finalize(() => this.loading = false))
+    let remaining = 2;
+    const done = (): void => {
+      remaining -= 1;
+      if (remaining === 0) this.loading = false;
+    };
+    this.loadDirectory('Trainer', done);
+    this.loadDirectory('Staff', done);
+  }
+
+  private loadDirectory(role: 'Trainer' | 'Staff', done: () => void): void {
+    const isTrainer = role === 'Trainer';
+    const page = isTrainer ? this.trainerPage : this.staffPage;
+    const status = isTrainer ? this.trainerStatus : this.staffStatus;
+    const search = isTrainer ? this.trainerSearch : this.staffSearch;
+    this.management.getStaff({ role, status, search, page, limit: this.pageSize })
+      .pipe(finalize(done))
       .subscribe({
-        next: response => this.records = response.staff || [],
+        next: response => {
+          if (isTrainer) {
+            this.trainers = response.staff || [];
+            this.trainerMatchTotal = response.total || 0;
+            this.trainerPages = response.totalPages || 0;
+          } else {
+            this.staff = response.staff || [];
+            this.staffMatchTotal = response.total || 0;
+            this.staffPages = response.totalPages || 0;
+          }
+          this.trainerTotal = response.summary?.trainers?.total || 0;
+          this.staffTotal = response.summary?.staff?.total || 0;
+          this.activeTrainerTotal = response.summary?.trainers?.active || 0;
+          this.activeStaffTotal = response.summary?.staff?.active || 0;
+        },
         error: error => {
-          console.error('Trainer/staff loading error:', error);
-          this.errorMessage = error.error?.message || 'Unable to load records.';
+          console.error(`${role} directory loading error:`, error);
+          this.errorMessage = error.error?.message || `Unable to load ${role.toLowerCase()} records.`;
         }
       });
   }
 
-  edit(record: TrainerStaffRecord): void {
-    this.editingId = record._id;
-    this.form = {
+  searchDirectory(role: 'Trainer' | 'Staff'): void {
+    if (role === 'Trainer') this.trainerPage = 1;
+    else this.staffPage = 1;
+    this.loading = true;
+    this.loadDirectory(role, () => this.loading = false);
+  }
+
+  changePage(role: 'Trainer' | 'Staff', delta: number): void {
+    if (role === 'Trainer') {
+      this.trainerPage = Math.max(1, Math.min(this.trainerPages, this.trainerPage + delta));
+    } else {
+      this.staffPage = Math.max(1, Math.min(this.staffPages, this.staffPage + delta));
+    }
+    this.loading = true;
+    this.loadDirectory(role, () => this.loading = false);
+  }
+
+  toggleForm(role: 'Trainer' | 'Staff'): void {
+    if (role === 'Trainer') {
+      this.showTrainerForm = !this.showTrainerForm;
+      if (!this.showTrainerForm) this.cancelEdit(role);
+    } else {
+      this.showStaffForm = !this.showStaffForm;
+      if (!this.showStaffForm) this.cancelEdit(role);
+    }
+    this.errorMessage = '';
+  }
+
+  edit(record: TeamRecord): void {
+    const form: TeamForm = {
       name: record.name,
       phone: record.phone,
       email: record.email || '',
-      role: record.role,
       specialization: record.specialization || '',
+      designation: record.designation || '',
+      department: record.department || '',
+      joiningDate: record.joiningDate ? String(record.joiningDate).slice(0, 10) : '',
+      salaryAmount: record.salaryAmount ?? null,
+      compensationType: record.compensationType || 'Salary',
       status: record.status
     };
+    if (record.role === 'Trainer') {
+      this.editingTrainerId = record._id;
+      this.trainerForm = form;
+      this.showTrainerForm = true;
+    } else {
+      this.editingStaffId = record._id;
+      this.staffForm = form;
+      this.showStaffForm = true;
+    }
+    this.selectedRecord = null;
     this.successMessage = '';
     this.errorMessage = '';
   }
 
-  resetForm(): void {
-    this.editingId = '';
-    this.form = this.emptyForm();
+  cancelEdit(role: 'Trainer' | 'Staff'): void {
+    if (role === 'Trainer') {
+      this.editingTrainerId = '';
+      this.trainerForm = this.emptyForm();
+    } else {
+      this.editingStaffId = '';
+      this.staffForm = this.emptyForm();
+    }
   }
 
-  save(): void {
-    if (this.saving) return;
-    this.saving = true;
+  save(role: 'Trainer' | 'Staff'): void {
+    if (this.savingRole) return;
+    this.savingRole = role;
     this.errorMessage = '';
     this.successMessage = '';
-    const request = this.editingId
-      ? this.management.updateStaff(this.editingId, this.form)
-      : this.management.createStaff(this.form);
-
-    request.pipe(finalize(() => this.saving = false)).subscribe({
+    const editingId = role === 'Trainer' ? this.editingTrainerId : this.editingStaffId;
+    const form = role === 'Trainer' ? this.trainerForm : this.staffForm;
+    const record = {
+      ...form,
+      role,
+      specialization: role === 'Trainer' ? form.specialization : '',
+      designation: role === 'Staff' ? form.designation : '',
+      department: role === 'Staff' ? form.department : '',
+      compensationType: role === 'Trainer' ? form.compensationType : 'Salary'
+    };
+    const request = editingId
+      ? this.management.updateStaff(editingId, record)
+      : this.management.createStaff(record);
+    request.pipe(finalize(() => this.savingRole = '')).subscribe({
       next: () => {
-        this.successMessage = this.editingId ? 'Record updated.' : 'Record added.';
-        this.resetForm();
+        this.successMessage = editingId ? `${role} updated.` : `${role} added.`;
+        this.cancelEdit(role);
+        if (role === 'Trainer') this.showTrainerForm = false;
+        else this.showStaffForm = false;
         this.load();
+        this.loadReport();
       },
       error: error => {
-        console.error('Trainer/staff save error:', error);
-        this.errorMessage = error.error?.message || 'Unable to save record.';
+        console.error(`${role} save error:`, error);
+        this.errorMessage = error.error?.message || `Unable to save ${role.toLowerCase()}.`;
       }
     });
   }
 
-  remove(record: TrainerStaffRecord): void {
-    if (!confirm(`Permanently remove ${record.name} from this business?`)) return;
-    this.management.deleteStaff(record._id).subscribe({
+  view(record: TeamRecord): void {
+    this.selectedRecord = record;
+  }
+
+  setStatus(record: TeamRecord, status: 'Active' | 'Inactive'): void {
+    if (status === 'Inactive' && !confirm(`Deactivate ${record.name}?`)) return;
+    this.errorMessage = '';
+    this.management.updateStaff(record._id, { status }).subscribe({
       next: () => {
-        this.records = this.records.filter(item => item._id !== record._id);
-        this.successMessage = 'Record deleted.';
+        this.successMessage = `${record.role} ${status === 'Inactive' ? 'deactivated' : 'activated'}.`;
+        this.selectedRecord = null;
+        this.load();
+        this.loadReport();
       },
       error: error => {
-        console.error('Trainer/staff deletion error:', error);
-        this.errorMessage = error.error?.message || 'Unable to delete record.';
+        console.error(`${record.role} status update error:`, error);
+        this.errorMessage = error.error?.message || `Unable to update ${record.role.toLowerCase()} status.`;
       }
     });
+  }
+
+  openAssignments(trainer: TeamRecord): void {
+    this.assignmentTrainer = trainer;
+    this.assignmentLoading = true;
+    this.errorMessage = '';
+    this.management.getTrainerAssignments(trainer._id)
+      .pipe(finalize(() => this.assignmentLoading = false))
+      .subscribe({
+        next: response => this.assignedMembers = response.members || [],
+        error: error => {
+          console.error('Trainer assignment loading error:', error);
+          this.errorMessage = error.error?.message || 'Unable to load trainer assignments.';
+          this.assignmentTrainer = null;
+        }
+      });
+    this.members.getAllMatchingMembers('', 'Active').subscribe({
+      next: members => this.availableMembers = members.map(member => ({
+        _id: member._id,
+        fullName: member.fullName,
+        phone: member.phone
+      })),
+      error: error => {
+        console.error('Assignment member list error:', error);
+        this.errorMessage = error.error?.message || 'Unable to load members for assignment.';
+      }
+    });
+  }
+
+  assignMember(): void {
+    if (!this.assignmentTrainer || !this.selectedMemberId || this.assigning) return;
+    this.assigning = true;
+    this.management.assignMemberToTrainer(this.assignmentTrainer._id, this.selectedMemberId)
+      .pipe(finalize(() => this.assigning = false))
+      .subscribe({
+        next: () => {
+          this.selectedMemberId = '';
+          this.successMessage = 'Member assigned to trainer.';
+          this.openAssignments(this.assignmentTrainer!);
+          this.loadDirectory('Trainer', () => undefined);
+          this.loadReport();
+        },
+        error: error => {
+          console.error('Member assignment error:', error);
+          this.errorMessage = error.error?.message || 'Unable to assign member.';
+        }
+      });
+  }
+
+  removeAssignment(member: { _id: string; fullName: string }): void {
+    if (!this.assignmentTrainer) return;
+    this.management.removeTrainerAssignment(this.assignmentTrainer._id, member._id).subscribe({
+      next: () => {
+        this.assignedMembers = this.assignedMembers.filter(item => item._id !== member._id);
+        this.successMessage = `${member.fullName} removed from trainer.`;
+        this.loadDirectory('Trainer', () => undefined);
+        this.loadReport();
+      },
+      error: error => {
+        console.error('Trainer assignment removal error:', error);
+        this.errorMessage = error.error?.message || 'Unable to remove trainer assignment.';
+      }
+    });
+  }
+
+  closeAssignments(): void {
+    this.assignmentTrainer = null;
+    this.assignedMembers = [];
+    this.selectedMemberId = '';
+  }
+
+  setReportPeriod(period: string): void {
+    this.reportPeriod = period;
+    const today = new Date();
+    const dateString = (date: Date): string =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    if (period === 'today') {
+      this.reportFrom = this.reportTo = dateString(today);
+    } else if (period === 'thisMonth') {
+      this.reportFrom = dateString(new Date(today.getFullYear(), today.getMonth(), 1));
+      this.reportTo = dateString(today);
+    } else if (period === 'lastMonth') {
+      this.reportFrom = dateString(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+      this.reportTo = dateString(new Date(today.getFullYear(), today.getMonth(), 0));
+    }
+  }
+
+  loadReport(): void {
+    if (!this.reportFrom || !this.reportTo || this.reportFrom > this.reportTo) {
+      this.reportRecords = [];
+      this.reportError = 'Choose a valid joining-date range with a start date before the end date.';
+      return;
+    }
+    this.reportLoading = true;
+    this.reportError = '';
+    this.management.getTrainerStaffReport({
+      role: this.reportRole,
+      status: this.reportStatus,
+      from: this.reportFrom,
+      to: this.reportTo
+    }).pipe(finalize(() => this.reportLoading = false)).subscribe({
+      next: response => {
+        this.reportRecords = response.records || [];
+        this.staffByDesignation = response.staffByDesignation || [];
+        this.reportCapabilities = response.capabilities || this.reportCapabilities;
+      },
+      error: error => {
+        console.error('Trainer/staff report loading error:', error);
+        this.reportError = error.error?.message || 'Unable to load the report.';
+      }
+    });
+  }
+
+  exportReport(format: 'csv' | 'excel' | 'pdf' | 'print'): void {
+    const columns = [
+      'Type', 'Name', 'Phone', 'Email', 'Joining Date', 'Specialization',
+      'Designation / Department', 'Assigned Member Count', 'Assigned Members', 'Status', 'Salary / Commission'
+    ];
+    const rows = this.reportRecords.map(record => [
+      record.role,
+      record.name,
+      record.phone,
+      record.email || '',
+      this.displayDate(record.joiningDate),
+      record.specialization || '',
+      [record.designation, record.department].filter(Boolean).join(' / '),
+      record.role === 'Trainer' ? String(record.assignedMemberCount || 0) : '',
+      (record.assignedMembers || []).map(member => `${member.fullName} (${member.phone})`).join('; '),
+      record.status,
+      record.salaryAmount == null ? '' : `${record.compensationType || 'Salary'} ${record.salaryAmount}`
+    ]);
+    const title = 'Trainers & Staff Report';
+    const generated = new Date().toLocaleString('en-IN');
+    if (format === 'csv') {
+      const csv = [columns, ...rows].map(row => row.map(value =>
+        `"${String(value).replace(/"/g, '""')}"`
+      ).join(',')).join('\r\n');
+      this.download(`${title}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+      return;
+    }
+    if (format === 'excel') {
+      const html = `<html><head><meta charset="utf-8"></head><body><h2>${this.escapeHtml(this.businessName)}</h2><h3>${title}</h3><p>Generated: ${this.escapeHtml(generated)}</p><table border="1"><thead><tr>${columns.map(item => `<th>${this.escapeHtml(item)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(item => `<td>${this.escapeHtml(item)}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+      this.download(`${title}.xls`, `\uFEFF${html}`, 'application/vnd.ms-excel;charset=utf-8');
+      return;
+    }
+    if (format === 'pdf') {
+      const pdf = new jsPDF({ orientation: 'landscape' });
+      pdf.setFontSize(16);
+      pdf.text(this.businessName, 14, 15);
+      pdf.setFontSize(12);
+      pdf.text(title, 14, 23);
+      pdf.setFontSize(9);
+      pdf.text(`Generated: ${generated}`, 14, 29);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const widths = columns.map(() => (pageWidth - 28) / columns.length);
+      pdf.setFontSize(6);
+      let y = 37;
+      const drawRow = (values: string[], bold = false): void => {
+        const cells = values.map((value, index) =>
+          pdf.splitTextToSize(value || '-', widths[index] - 3) as string[]
+        );
+        const rowHeight = Math.max(...cells.map(lines => lines.length)) * 3.2 + 3;
+        if (y + rowHeight > pdf.internal.pageSize.getHeight() - 10) {
+          pdf.addPage();
+          y = 16;
+        }
+        pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+        let x = 14;
+        cells.forEach((text, index) => {
+          pdf.text(text, x + 1, y);
+          x += widths[index];
+        });
+        y += rowHeight;
+      };
+      drawRow(columns, true);
+      rows.forEach(row => drawRow(row));
+      pdf.save(`${title}.pdf`);
+      return;
+    }
+    const popup = window.open('', '_blank', 'width=1000,height=800');
+    if (!popup) {
+      this.errorMessage = 'Allow pop-ups to print the report.';
+      return;
+    }
+    popup.document.open();
+    popup.document.write(`<html><head><title>${title}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#222}h2,h3{margin:4px 0}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:11px}th{background:#f2f3f5}@media print{button{display:none}}</style></head><body><h2>${this.escapeHtml(this.businessName)}</h2><h3>${title}</h3><p>Generated: ${this.escapeHtml(generated)}</p><table><thead><tr>${columns.map(item => `<th>${this.escapeHtml(item)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(item => `<td>${this.escapeHtml(item)}</td>`).join('')}</tr>`).join('')}</tbody></table><button onclick="window.print()">Print</button></body></html>`);
+    popup.document.close();
+  }
+
+  private displayDate(value?: string): string {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-IN');
+  }
+
+  assignedMemberSummary(record: TeamRecord): string {
+    return (record.assignedMembers || [])
+      .map(member => `${member.fullName} (${member.phone})`)
+      .join(', ') || '—';
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char] || char);
+  }
+
+  private download(filename: string, content: string, type: string): void {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private readBusinessName(): string {
+    try {
+      const business = JSON.parse(localStorage.getItem('business') || '{}');
+      return business.businessName || 'SS Fitness Manager';
+    } catch (error) {
+      console.error('Business name could not be loaded for team report:', error);
+      return 'SS Fitness Manager';
+    }
   }
 }

@@ -147,28 +147,86 @@
         </ng-template>
       </div>
 
+      <section class="collection-section" *ngIf="!dashboardError" aria-label="Payment collections">
+        <div class="collection-heading">
+          <div>
+            <h2>Payment Collections</h2>
+            <p>Successful payments · {{ dashboardTimeZone }}</p>
+          </div>
+        </div>
+        <div class="collection-grid" *ngIf="collections; else collectionSkeletons">
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>Today's Collection</span>
+              <div class="stat-icon blue">₹</div>
+            </div>
+            <h3>{{ formatCurrency(collections.today) }}</h3>
+            <div class="stat-bottom"><span>Successful payments today</span></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>This Week's Collection</span>
+              <div class="stat-icon green">▦</div>
+            </div>
+            <h3>{{ formatCurrency(collections.week) }}</h3>
+            <div class="stat-bottom"><span>Monday through today</span></div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-top">
+              <span>This Month's Collection</span>
+              <div class="stat-icon orange">▤</div>
+            </div>
+            <h3>{{ formatCurrency(collections.month) }}</h3>
+            <div class="stat-bottom"><span>Successful payments this month</span></div>
+          </article>
+        </div>
+        <ng-template #collectionSkeletons>
+          <div class="collection-grid">
+            <article class="stat-card collection-skeleton" *ngFor="let placeholder of [0, 1, 2]" aria-hidden="true">
+              <div class="skeleton-line"></div>
+              <div class="skeleton-value"></div>
+              <div class="skeleton-line"></div>
+            </article>
+          </div>
+        </ng-template>
+      </section>
+
       <div class="analytics-grid" *ngIf="!dashboardError">
 
         <ng-container *ngIf="!dashboardLoading; else dashboardAnalyticsSkeletons">
-        <div class="panel revenue-panel">
+        <div class="panel monthly-revenue-panel">
           <div class="panel-header">
             <div>
-              <h3>Membership Collection</h3>
-              <p>Total collected membership amount</p>
+              <h3>Monthly Revenue</h3>
+              <p>Successful payments · last 12 months</p>
             </div>
           </div>
 
-          <div class="chart-summary">
-            <h2>{{ stats[2]?.value || '₹0' }}</h2>
-            <span>Total membership collection</span>
+          <div
+            class="monthly-revenue-chart"
+            *ngIf="collections?.monthlyRevenue?.length && maxMonthlyRevenue > 0; else noMonthlyRevenue"
+            role="img"
+            aria-label="Bar chart showing monthly successful payment revenue for the last 12 months">
+            <div class="bar-chart revenue-chart">
+              <div class="chart-column revenue-chart-column" *ngFor="let point of collections.monthlyRevenue">
+                <span class="revenue-amount" [title]="formatCurrency(point.revenue)">
+                  {{ formatCompactCurrency(point.revenue) }}
+                </span>
+                <div class="bar-track revenue-bar-track">
+                  <div class="bar revenue-bar" [style.height.%]="getRevenueBarHeight(point.revenue)"></div>
+                </div>
+                <span class="revenue-month">{{ point.month }}</span>
+              </div>
+            </div>
           </div>
-
-          <div class="collection-info">
-            <p>
-              This amount is calculated from membership records
-              stored in your business account.
-            </p>
-          </div>
+          <ng-template #noMonthlyRevenue>
+            <div class="revenue-empty" *ngIf="collections">
+              No successful payments recorded in the last 12 months.
+            </div>
+            <div class="revenue-empty" *ngIf="!collections">
+              Collection history is unavailable.
+            </div>
+          </ng-template>
         </div>
 
         <div class="panel attendance-panel">

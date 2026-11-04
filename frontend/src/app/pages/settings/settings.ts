@@ -3,6 +3,7 @@ import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { ManagementService } from '../../services/management';
+import { GST_STATES } from '../../utils/gst-states';
 
 @Component({
   selector: 'app-business-settings',
@@ -23,14 +24,28 @@ export class BusinessSettings implements OnInit {
     businessType: 'Gym',
     phone: '',
     email: '',
-    address: ''
+    address: '',
+    logoUrl: '',
+    gstEnabled: false,
+    gstinNumber: '',
+    legalBusinessName: '',
+    registeredBusinessAddress: '',
+    state: '',
+    stateCode: '',
+    gstPercentage: 0,
+    taxInclusive: true
   };
   readonly businessTypes = ['Gym', 'Yoga Studio', 'Fitness Studio', 'Other'];
+  readonly gstStates = GST_STATES;
 
   constructor(private readonly management: ManagementService) {}
 
   ngOnInit(): void {
     this.load();
+  }
+
+  onStateCodeChange(stateCode: string): void {
+    this.form.state = this.gstStates.find(item => item.code === stateCode)?.name || '';
   }
 
   load(): void {
@@ -46,7 +61,16 @@ export class BusinessSettings implements OnInit {
             businessType: business.businessType || 'Other',
             phone: business.phone || '',
             email: business.email || '',
-            address: business.address || ''
+            address: business.address || '',
+            logoUrl: business.logoUrl || '',
+            gstEnabled: business.gstEnabled === true,
+            gstinNumber: business.gstinNumber || '',
+            legalBusinessName: business.legalBusinessName || '',
+            registeredBusinessAddress: business.registeredBusinessAddress || '',
+            state: business.state || '',
+            stateCode: business.stateCode || '',
+            gstPercentage: Number(business.gstPercentage || 0),
+            taxInclusive: business.taxInclusive !== false
           };
         },
         error: error => {
@@ -71,7 +95,16 @@ export class BusinessSettings implements OnInit {
             businessType: business.businessType,
             phone: business.phone || '',
             email: business.email || '',
-            address: business.address || ''
+            address: business.address || '',
+            logoUrl: business.logoUrl || '',
+            gstEnabled: business.gstEnabled === true,
+            gstinNumber: business.gstinNumber || '',
+            legalBusinessName: business.legalBusinessName || '',
+            registeredBusinessAddress: business.registeredBusinessAddress || '',
+            state: business.state || '',
+            stateCode: business.stateCode || '',
+            gstPercentage: Number(business.gstPercentage || 0),
+            taxInclusive: business.taxInclusive !== false
           };
           localStorage.setItem('business', JSON.stringify(business));
           this.businessUpdated.emit(business.businessName);
