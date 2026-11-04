@@ -161,7 +161,7 @@
         </div>
 
       </div>
-      <small *ngIf="selectedMembership.gstSnapshot?.enabled">
+      <small *ngIf="selectedMembership?.gstSnapshot?.enabled">
         Taxable amount: ₹{{ selectedMembership.gstSnapshot.taxableAmount | number:'1.2-2' }}
         · GST {{ selectedMembership.gstSnapshot.gstPercentage }}%
         · {{ selectedMembership.gstSnapshot.taxInclusive ? 'Inclusive' : 'Exclusive' }}

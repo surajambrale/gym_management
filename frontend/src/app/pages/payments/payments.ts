@@ -147,9 +147,9 @@ export class Payments implements OnInit, OnChanges {
 
     this.membersLoading = true;
 
-    this.memberService.getMembers('', 'Active', 1, 100).subscribe({
-      next: (response) => {
-        this.members = response.members || [];
+    this.memberService.getAllMatchingMembers('', 'Active').subscribe({
+      next: (members) => {
+        this.members = members;
         this.membersLoading = false;
       },
       error: (error) => {
