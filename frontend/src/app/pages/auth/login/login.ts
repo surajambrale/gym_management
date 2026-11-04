@@ -6,7 +6,7 @@ import {
   Validators,
   ReactiveFormsModule
 } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../services/auth';
 
 @Component({
@@ -26,8 +26,17 @@ export class Login {
   constructor(
     private fb: FormBuilder,
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private route: ActivatedRoute
   ) {
+    const reason = this.route.snapshot.queryParamMap.get('reason');
+    if (reason === 'inactive') {
+      this.successMessage = 'You have been logged out due to inactivity.';
+    } else if (reason === 'expired') {
+      this.successMessage = 'Your session has expired. Please log in again.';
+    } else if (reason === 'revoked') {
+      this.successMessage = 'This session is no longer active. Please log in again.';
+    }
     this.loginForm = this.fb.group({
       email: ['', [Validators.required, Validators.email]],
       password: ['', Validators.required]
@@ -52,7 +61,7 @@ export class Login {
 
         this.loading = false;
 
-        if (response.success && response.token) {
+        if (response.success && response.session?.id) {
           this.successMessage = 'Login successful!';
           this.router.navigate(['/dashboard']);
         } else {

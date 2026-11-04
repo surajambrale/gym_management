@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { EMPTY, Observable, expand, reduce } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -11,15 +11,6 @@ export class MemberService {
   private apiUrl = `${environment.apiUrl}/members`;
 
   constructor(private http: HttpClient) {}
-
-  // Get JWT Authentication Headers
-  private getAuthHeaders(): HttpHeaders {
-    const token = localStorage.getItem('token');
-
-    return new HttpHeaders({
-      Authorization: `Bearer ${token}`
-    });
-  }
 
   // Get Members
   getMembers(
@@ -47,10 +38,7 @@ export class MemberService {
       params = params.set('from', from).set('to', to);
     }
 
-    return this.http.get<any>(this.apiUrl, {
-      headers: this.getAuthHeaders(),
-      params
-    });
+    return this.http.get<any>(this.apiUrl, { params });
   }
 
   getAllMatchingMembers(
@@ -80,39 +68,26 @@ export class MemberService {
 
   // Add Member
   addMember(data: any): Observable<any> {
-    return this.http.post<any>(this.apiUrl, data, {
-      headers: this.getAuthHeaders()
-    });
+    return this.http.post<any>(this.apiUrl, data);
   }
 
   // Update Member
   updateMember(id: string, data: any): Observable<any> {
     return this.http.put<any>(
       `${this.apiUrl}/${id}`,
-      data,
-      { headers: this.getAuthHeaders() }
+      data
     );
   }
 
   // Delete Member
   deleteMember(id: string): Observable<any> {
-    return this.http.delete<any>(
-      `${this.apiUrl}/${id}`,
-      { headers: this.getAuthHeaders() }
-    );
+    return this.http.delete<any>(`${this.apiUrl}/${id}`);
   }
 
   generateMemberQR(memberId: string): Observable<any> {
-  const token = localStorage.getItem('token');
-
-  const headers = {
-    Authorization: `Bearer ${token}`
-  };
-
   return this.http.post(
     `${this.apiUrl}/${memberId}/generate-qr`,
-    {},
-    { headers }
+    {}
   );
 }
 

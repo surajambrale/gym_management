@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { ManagementService } from '../../services/management';
 import { GST_STATES } from '../../utils/gst-states';
+import { AuthService } from '../../services/auth';
 
 @Component({
   selector: 'app-business-settings',
@@ -14,11 +15,24 @@ import { GST_STATES } from '../../utils/gst-states';
 })
 export class BusinessSettings implements OnInit {
   @Output() businessUpdated = new EventEmitter<string>();
+  @Output() loggedOut = new EventEmitter<void>();
 
   loading = false;
   saving = false;
   errorMessage = '';
   successMessage = '';
+  sessionsLoading = false;
+  sessionsSaving = false;
+  sessionsError = '';
+  sessionsMessage = '';
+  sessions: Array<{
+    id: string;
+    device: string;
+    createdAt: string;
+    lastActivityAt: string;
+    expiresAt: string;
+    current: boolean;
+  }> = [];
   form = {
     businessName: '',
     businessType: 'Gym',
@@ -38,10 +52,92 @@ export class BusinessSettings implements OnInit {
   readonly businessTypes = ['Gym', 'Yoga Studio', 'Fitness Studio', 'Other'];
   readonly gstStates = GST_STATES;
 
-  constructor(private readonly management: ManagementService) {}
+  constructor(
+    private readonly management: ManagementService,
+    private readonly auth: AuthService
+  ) {}
 
   ngOnInit(): void {
     this.load();
+    this.loadSessions();
+  }
+
+  get hasOtherSessions(): boolean {
+    return this.sessions.some(session => !session.current);
+  }
+
+  loadSessions(): void {
+    this.sessionsLoading = true;
+    this.sessionsError = '';
+    this.auth.getSessions()
+      .pipe(finalize(() => this.sessionsLoading = false))
+      .subscribe({
+        next: response => this.sessions = response.sessions || [],
+        error: error => {
+          console.error('Account sessions loading error:', error);
+          this.sessionsError = error.error?.message || 'Unable to load account sessions.';
+        }
+      });
+  }
+
+  revokeSession(session: { id: string; current: boolean }): void {
+    if (this.sessionsSaving) return;
+    const message = session.current
+      ? 'Log out this device now?'
+      : 'Revoke this device session? It will need to sign in again.';
+    if (!confirm(message)) return;
+    this.sessionsSaving = true;
+    this.sessionsError = '';
+    this.auth.revokeSession(session.id)
+      .pipe(finalize(() => this.sessionsSaving = false))
+      .subscribe({
+        next: response => {
+          if (response.current) this.loggedOut.emit();
+          else {
+            this.sessionsMessage = 'Selected session revoked.';
+            this.loadSessions();
+          }
+        },
+        error: error => {
+          console.error('Account session revoke error:', error);
+          this.sessionsError = error.error?.message || 'Unable to revoke this session.';
+        }
+      });
+  }
+
+  revokeOtherSessions(): void {
+    if (this.sessionsSaving || !this.sessions.some(session => !session.current)) return;
+    if (!confirm('Log out all other devices? This device will remain signed in.')) return;
+    this.sessionsSaving = true;
+    this.sessionsError = '';
+    this.auth.revokeOtherSessions()
+      .pipe(finalize(() => this.sessionsSaving = false))
+      .subscribe({
+        next: () => {
+          this.sessionsMessage = 'Other device sessions revoked.';
+          this.loadSessions();
+        },
+        error: error => {
+          console.error('Other session revoke error:', error);
+          this.sessionsError = error.error?.message || 'Unable to revoke other sessions.';
+        }
+      });
+  }
+
+  revokeAllSessions(): void {
+    if (this.sessionsSaving) return;
+    if (!confirm('Log out all devices, including this one?')) return;
+    this.sessionsSaving = true;
+    this.sessionsError = '';
+    this.auth.revokeAllSessions()
+      .pipe(finalize(() => this.sessionsSaving = false))
+      .subscribe({
+        next: () => this.loggedOut.emit(),
+        error: error => {
+          console.error('All session revoke error:', error);
+          this.sessionsError = error.error?.message || 'Unable to revoke sessions.';
+        }
+      });
   }
 
   onStateCodeChange(stateCode: string): void {

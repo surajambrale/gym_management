@@ -15,6 +15,7 @@ import { TrainersStaff } from './pages/trainers-staff/trainers-staff';
 import { Reports } from './pages/reports/reports';
 import { BusinessSettings } from './pages/settings/settings';
 import { SubscriptionPage } from './pages/subscription/subscription';
+import { SessionActivityService } from './services/session-activity';
 
 import { environment } from '../environments/environment';
 
@@ -46,6 +47,9 @@ export class App implements OnInit, OnDestroy {
 
   isAuthenticated = false;
   sessionChecking = true;
+  sessionVerificationError = '';
+  sessionWarning = false;
+  sessionRemainingMs = 30 * 60 * 1000;
 
   businessName = environment.appName;
   ownerName = 'Admin';
@@ -65,13 +69,24 @@ export class App implements OnInit, OnDestroy {
     monthlyRevenue: Array<{ key: string; month: string; revenue: number }>;
   } | null = null;
   private dashboardLoadedAt = 0;
-  private dashboardToken = '';
-  private lastVerifiedToken = '';
+  private dashboardSessionId = '';
+  private lastVerifiedSessionId = '';
 
   private sessionVerificationStarted = false;
   private routerSubscription?: Subscription;
   private dashboardRefreshSubscription?: Subscription;
+  private sessionWarningSubscription?: Subscription;
+  private sessionRemainingSubscription?: Subscription;
+  private sessionExpiredSubscription?: Subscription;
   private dashboardRefreshQueued = false;
+  private readonly sessionReferenceHandler = (event: StorageEvent) => {
+    if (event.key !== 'ssfm_session_reference') return;
+    if (event.newValue === this.lastVerifiedSessionId) return;
+    this.isAuthenticated = false;
+    this.lastVerifiedSessionId = '';
+    this.sessionActivity.stop();
+    this.verifySession();
+  };
 
   // SIDEBAR MENU GROUPS
   menuGroups = [
@@ -105,7 +120,8 @@ export class App implements OnInit, OnDestroy {
     private router: Router,
     private authService: AuthService,
     private dashboardService: DashboardService,
-    private changeDetector: ChangeDetectorRef
+    private changeDetector: ChangeDetectorRef,
+    private sessionActivity: SessionActivityService
   ) {}
 
   ngOnInit(): void {
@@ -120,6 +136,19 @@ export class App implements OnInit, OnDestroy {
           }
         }
       });
+    this.sessionWarningSubscription = this.sessionActivity.warning$
+      .subscribe(value => {
+        this.sessionWarning = value;
+        this.changeDetector.markForCheck();
+      });
+    this.sessionRemainingSubscription = this.sessionActivity.remainingMs$
+      .subscribe(value => {
+        this.sessionRemainingMs = value;
+        this.changeDetector.markForCheck();
+      });
+    this.sessionExpiredSubscription = this.sessionActivity.sessionExpired$
+      .subscribe(reason => this.onSessionExpired(reason));
+    window.addEventListener('storage', this.sessionReferenceHandler);
 
     // Check session whenever route changes.
     this.routerSubscription = this.router.events
@@ -137,48 +166,37 @@ export class App implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routerSubscription?.unsubscribe();
     this.dashboardRefreshSubscription?.unsubscribe();
+    this.sessionWarningSubscription?.unsubscribe();
+    this.sessionRemainingSubscription?.unsubscribe();
+    this.sessionExpiredSubscription?.unsubscribe();
+    this.sessionActivity.stop();
+    window.removeEventListener('storage', this.sessionReferenceHandler);
   }
 
   // SESSION VERIFICATION
   verifySession(): void {
-
     const currentUrl = this.router.url;
-
-    // Login and registration pages
     if (
       currentUrl.startsWith('/login') ||
       currentUrl.startsWith('/register')
     ) {
       this.sessionChecking = false;
-      this.isAuthenticated = false;
-      this.lastVerifiedToken = '';
+      this.sessionVerificationError = '';
       return;
     }
 
-    // Check token
-    if (!this.authService.isLoggedIn()) {
-      this.sessionChecking = false;
-      this.isAuthenticated = false;
-
-      if (currentUrl !== '/login') {
-        this.router.navigate(['/login']);
-      }
-
+    const storedSessionId = this.authService.getSessionReference();
+    if (this.isAuthenticated && storedSessionId && storedSessionId === this.lastVerifiedSessionId) {
       return;
     }
 
-    const token = localStorage.getItem('token') || '';
-    if (this.isAuthenticated && token === this.lastVerifiedToken) {
-      return;
-    }
-
-    // Avoid duplicate profile requests
     if (this.sessionVerificationStarted) {
       return;
     }
 
     this.sessionVerificationStarted = true;
     this.sessionChecking = true;
+    this.sessionVerificationError = '';
 
     this.authService.getProfile()
       .pipe(
@@ -189,21 +207,18 @@ export class App implements OnInit, OnDestroy {
         })
       )
       .subscribe({
-
         next: (response) => {
-
-          console.log('PROFILE RESPONSE:', response);
-
           if (
             response?.success === true &&
             response?.owner &&
-            response?.business
+            response?.business &&
+            response?.session?.id
           ) {
-
             this.isAuthenticated = true;
-            this.lastVerifiedToken = token;
+            this.lastVerifiedSessionId = response.session.id;
+            this.sessionActivity.start(response.session);
 
-            if (this.dashboardToken && this.dashboardToken !== token) {
+            if (this.dashboardSessionId && this.dashboardSessionId !== response.session.id) {
               this.stats = [];
               this.recentMembers = [];
               this.collections = null;
@@ -211,50 +226,51 @@ export class App implements OnInit, OnDestroy {
             }
 
             this.ownerName = response.owner.name || 'Owner';
-
-            this.businessName =
-              response.business.businessName || this.appName;
-
-            localStorage.setItem(
-              'owner',
-              JSON.stringify(response.owner)
-            );
-
-            localStorage.setItem(
-              'business',
-              JSON.stringify(response.business)
-            );
-
-            // Restore selected module
-            if (currentUrl.startsWith('/members')) {
-              this.selectedMenu = 'Members';
-            } else {
-              this.selectedMenu = 'Dashboard';
-            }
-
-            console.log('SESSION VERIFIED SUCCESSFULLY');
-
+            this.businessName = response.business.businessName || this.appName;
+            this.selectedMenu = currentUrl.startsWith('/members') ? 'Members' : 'Dashboard';
             this.loadDashboardData();
-
           } else {
-
-            this.authService.logout();
-            this.isAuthenticated = false;
-
-            this.router.navigate(['/login']);
+            this.handleInvalidSession('revoked');
           }
         },
-
         error: (error) => {
-
           console.error('Session verification failed:', error);
-
-          this.authService.logout();
-          this.isAuthenticated = false;
-
-          this.router.navigate(['/login']);
+          if (error.status === 401) {
+            const reason = error.error?.code === 'SESSION_EXPIRED' ? 'expired'
+              : error.error?.code === 'SESSION_REVOKED' ? 'revoked'
+                : '';
+            this.handleInvalidSession(reason);
+          } else {
+            this.isAuthenticated = false;
+            this.sessionVerificationError =
+              error.error?.message || 'We could not verify your session. Check your connection and try again.';
+          }
         }
       });
+  }
+
+  retrySessionVerification(): void {
+    this.sessionVerificationError = '';
+    this.verifySession();
+  }
+
+  backToLogin(): void {
+    this.sessionActivity.stop();
+    this.authService.logout().subscribe({
+      next: () => this.finishLogout(),
+      error: () => this.finishLogout()
+    });
+  }
+
+  stayLoggedIn(): void {
+    this.sessionActivity.stayLoggedIn();
+  }
+
+  get sessionRemainingLabel(): string {
+    const totalSeconds = Math.ceil(this.sessionRemainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
   // AUTH ROUTE CHECK
@@ -266,14 +282,19 @@ export class App implements OnInit, OnDestroy {
   }
 
   // LOGOUT
-  logout(): void {
+  logout(reason = ''): void {
+    this.sessionActivity.stop();
+    this.authService.logout().subscribe({
+      next: () => this.finishLogout(reason),
+      error: () => this.finishLogout(reason)
+    });
+  }
 
-    this.authService.logout();
-
+  private finishLogout(reason = ''): void {
     this.isAuthenticated = false;
     this.sessionChecking = false;
-    this.lastVerifiedToken = '';
-    this.dashboardToken = '';
+    this.lastVerifiedSessionId = '';
+    this.dashboardSessionId = '';
     this.dashboardLoadedAt = 0;
     this.stats = [];
     this.recentMembers = [];
@@ -287,8 +308,26 @@ export class App implements OnInit, OnDestroy {
     this.selectedMenu = 'Dashboard';
 
     this.mobileMenuOpen = false;
+    this.sessionWarning = false;
+    this.sessionVerificationError = '';
+    this.router.navigate(['/login'], {
+      queryParams: reason ? { reason } : undefined
+    });
+  }
 
-    this.router.navigate(['/login']);
+  private handleInvalidSession(reason: string): void {
+    this.sessionActivity.stop();
+    this.authService.clearLocalSession();
+    this.isAuthenticated = false;
+    this.lastVerifiedSessionId = '';
+    this.sessionVerificationError = '';
+    this.router.navigate(['/login'], {
+      queryParams: reason ? { reason } : undefined
+    });
+  }
+
+  private onSessionExpired(reason: 'inactive' | 'revoked'): void {
+    this.handleInvalidSession(reason);
   }
 
   // SIDEBAR MENU
@@ -373,7 +412,7 @@ export class App implements OnInit, OnDestroy {
               }
             : null;
           this.dashboardLoadedAt = Date.now();
-          this.dashboardToken = localStorage.getItem('token') || '';
+          this.dashboardSessionId = this.lastVerifiedSessionId;
 
           this.todayAttendance = data.todayAttendance ?? 0;
 

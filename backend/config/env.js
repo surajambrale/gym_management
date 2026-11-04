@@ -3,7 +3,7 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const requiredVariables = ['MONGODB_URI', 'JWT_SECRET'];
+const requiredVariables = ['MONGODB_URI'];
 const missingVariables = requiredVariables.filter(
   (name) => !process.env[name]?.trim()
 );
@@ -35,7 +35,7 @@ module.exports = Object.freeze({
   port,
   nodeEnv,
   mongodbUri: process.env.MONGODB_URI,
-  jwtSecret: process.env.JWT_SECRET,
+  jwtSecret: process.env.JWT_SECRET || '',
   frontendUrl,
   allowedOrigins: Object.freeze([...allowedOrigins]),
   backendUrl: process.env.BACKEND_URL || 'http://localhost:5000',

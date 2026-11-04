@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
   HttpClient,
-  HttpHeaders,
   HttpParams
 } from '@angular/common/http';
 import { EMPTY, Observable, expand, reduce } from 'rxjs';
@@ -12,11 +11,6 @@ export class ManagementService {
   private readonly baseUrl = environment.apiUrl;
 
   constructor(private readonly http: HttpClient) {}
-
-  private get headers(): HttpHeaders {
-    const token = localStorage.getItem('token') || '';
-    return new HttpHeaders({ Authorization: `Bearer ${token}` });
-  }
 
   getStaff(options: {
     role?: string;
@@ -29,46 +23,31 @@ export class ManagementService {
     Object.entries(options).forEach(([key, value]) => {
       if (value !== undefined && value !== '') params = params.set(key, value);
     });
-    return this.http.get(`${this.baseUrl}/trainers-staff`, {
-      headers: this.headers,
-      params
-    });
+    return this.http.get(`${this.baseUrl}/trainers-staff`, { params });
   }
 
   createStaff(data: object): Observable<any> {
-    return this.http.post(`${this.baseUrl}/trainers-staff`, data, {
-      headers: this.headers
-    });
+    return this.http.post(`${this.baseUrl}/trainers-staff`, data);
   }
 
   updateStaff(id: string, data: object): Observable<any> {
-    return this.http.put(`${this.baseUrl}/trainers-staff/${id}`, data, {
-      headers: this.headers
-    });
+    return this.http.put(`${this.baseUrl}/trainers-staff/${id}`, data);
   }
 
   deleteStaff(id: string): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/trainers-staff/${id}`, {
-      headers: this.headers
-    });
+    return this.http.delete(`${this.baseUrl}/trainers-staff/${id}`);
   }
 
   getTrainerAssignments(id: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/trainers-staff/${id}/assignments`, {
-      headers: this.headers
-    });
+    return this.http.get(`${this.baseUrl}/trainers-staff/${id}/assignments`);
   }
 
   assignMemberToTrainer(id: string, memberId: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/trainers-staff/${id}/assignments`, { memberId }, {
-      headers: this.headers
-    });
+    return this.http.post(`${this.baseUrl}/trainers-staff/${id}/assignments`, { memberId });
   }
 
   removeTrainerAssignment(id: string, memberId: string): Observable<any> {
-    return this.http.delete(`${this.baseUrl}/trainers-staff/${id}/assignments/${memberId}`, {
-      headers: this.headers
-    });
+    return this.http.delete(`${this.baseUrl}/trainers-staff/${id}/assignments/${memberId}`);
   }
 
   getTrainerStaffReport(filters: {
@@ -81,10 +60,7 @@ export class ManagementService {
     Object.entries(filters).forEach(([key, value]) => {
       if (value) params = params.set(key, value);
     });
-    return this.http.get(`${this.baseUrl}/trainers-staff/reports`, {
-      headers: this.headers,
-      params
-    });
+    return this.http.get(`${this.baseUrl}/trainers-staff/reports`, { params });
   }
 
   getReport(filters: Record<string, string | number | boolean | undefined>): Observable<any> {
@@ -92,10 +68,7 @@ export class ManagementService {
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== '') params = params.set(key, value);
     });
-    return this.http.get(`${this.baseUrl}/reports`, {
-      headers: this.headers,
-      params
-    });
+    return this.http.get(`${this.baseUrl}/reports`, { params });
   }
 
   getAllReportRows(
@@ -123,20 +96,14 @@ export class ManagementService {
   }
 
   getSettings(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/business/settings`, {
-      headers: this.headers
-    });
+    return this.http.get(`${this.baseUrl}/business/settings`);
   }
 
   updateSettings(data: object): Observable<any> {
-    return this.http.put(`${this.baseUrl}/business/settings`, data, {
-      headers: this.headers
-    });
+    return this.http.put(`${this.baseUrl}/business/settings`, data);
   }
 
   getSubscription(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/business/subscription`, {
-      headers: this.headers
-    });
+    return this.http.get(`${this.baseUrl}/business/subscription`);
   }
 }

@@ -65,7 +65,7 @@ export class Register {
       next: (response) => {
         this.loading = false;
 
-        if (response.success) {
+        if (response.success && response.session?.id) {
           this.router.navigate(['/dashboard']);
         } else {
           this.errorMessage = response.message || 'Registration failed';

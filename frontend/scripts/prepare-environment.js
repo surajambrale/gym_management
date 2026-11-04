@@ -6,7 +6,6 @@ const publicEnvironmentVariables = {
   appVersion: 'NG_APP_VERSION',
   frontendUrl: 'NG_APP_FRONTEND_URL',
   backendUrl: 'NG_APP_BACKEND_URL',
-  apiUrl: 'NG_APP_API_URL',
   razorpayKeyId: 'NG_APP_RAZORPAY_KEY_ID'
 };
 

@@ -1,26 +1,78 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const OwnerSession = require('../models/OwnerSession');
 
 const Owner = require('../models/Owner');
 const Business = require('../models/Business');
 const config = require('../config/env');
+const {
+  SESSION_COOKIE_NAME,
+  SESSION_IDLE_TIMEOUT_MS,
+  SESSION_MAX_AGE_MS,
+  TOKEN_ROTATION_GRACE_MS,
+  createSessionToken,
+  hashSessionToken,
+  getSessionToken,
+  getDeviceLabel,
+  cookieOptions
+} = require('../utils/ownerSession');
 
-// Generate JWT
-const generateToken = (owner) => {
-  return jwt.sign(
-    {
-      ownerId: owner._id,
-      tenantId: owner.tenantId,
-      role: owner.role
-    },
-    config.jwtSecret,
-    { expiresIn: '7d' }
-  );
+const publicSession = session => ({
+  id: String(session._id),
+  device: session.device,
+  createdAt: session.createdAt,
+  lastActivityAt: session.lastActivityAt,
+  expiresAt: session.expiresAt
+});
+
+const issueSession = async (owner, req, res) => {
+  const token = createSessionToken();
+  const now = new Date();
+  const session = await OwnerSession.create({
+    ownerId: owner._id,
+    tenantId: owner.tenantId,
+    businessId: owner.businessId,
+    tokenHash: hashSessionToken(token),
+    device: getDeviceLabel(req.get('user-agent')),
+    userAgent: String(req.get('user-agent') || '').slice(0, 500),
+    lastActivityAt: now,
+    expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS)
+  });
+  res.cookie(SESSION_COOKIE_NAME, token, cookieOptions(config.nodeEnv));
+  return publicSession(session);
+};
+
+const clearSessionCookie = res => {
+  const options = cookieOptions(config.nodeEnv);
+  delete options.maxAge;
+  res.clearCookie(SESSION_COOKIE_NAME, options);
+};
+
+const findActiveSession = (req, now) => OwnerSession.findOne({
+  _id: req.session._id,
+  ownerId: req.owner._id,
+  tenantId: req.tenantId,
+  revokedAt: null,
+  expiresAt: { $gt: now },
+  lastActivityAt: { $gt: new Date(now.getTime() - SESSION_IDLE_TIMEOUT_MS) }
+});
+
+const respondWithLatestSession = async (req, res, now) => {
+  const session = await findActiveSession(req, now);
+  if (!session) return false;
+  res.status(409).json({
+    success: false,
+    code: 'SESSION_REFRESHED',
+    message: 'This session was updated in another tab.',
+    session: publicSession(session)
+  });
+  return true;
 };
 
 // OWNER REGISTRATION
 exports.registerOwner = async (req, res) => {
   let createdBusiness;
+  let createdOwner;
 
   try {
     const {
@@ -98,13 +150,14 @@ exports.registerOwner = async (req, res) => {
       businessId: createdBusiness._id,
       tenantId: createdBusiness._id
     });
+    createdOwner = owner;
 
-    const token = generateToken(owner);
+    const session = await issueSession(owner, req, res);
 
     return res.status(201).json({
       success: true,
       message: 'Registration successful',
-      token,
+      session,
       owner: {
         id: owner._id,
         name: owner.name,
@@ -122,7 +175,10 @@ exports.registerOwner = async (req, res) => {
     });
 
   } catch (error) {
-    // Remove business if owner creation failed
+    // Avoid leaving a partially registered account if session creation fails.
+    if (createdOwner) {
+      await Owner.findByIdAndDelete(createdOwner._id);
+    }
     if (createdBusiness) {
       await Business.findByIdAndDelete(createdBusiness._id);
     }
@@ -189,12 +245,12 @@ exports.loginOwner = async (req, res) => {
       });
     }
 
-    const token = generateToken(owner);
+    const session = await issueSession(owner, req, res);
 
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      token,
+      session,
       owner: {
         id: owner._id,
         name: owner.name,
@@ -261,7 +317,8 @@ exports.getProfile = async (req, res) => {
         businessName: business.businessName,
         businessType: business.businessType,
         address: business.address
-      }
+      },
+      session: publicSession(req.session)
     });
 
   } catch (error) {
@@ -271,5 +328,198 @@ exports.getProfile = async (req, res) => {
       success: false,
       message: 'Unable to fetch profile'
     });
+  }
+};
+
+exports.recordSessionActivity = async (req, res) => {
+  try {
+    const now = new Date();
+    const token = getSessionToken(req.headers.cookie);
+    const tokenHash = hashSessionToken(token);
+    const updated = await OwnerSession.findOneAndUpdate({
+      _id: req.session._id,
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      revokedAt: null,
+      tokenHash,
+      expiresAt: { $gt: now }
+    }, {
+      $set: {
+        lastActivityAt: now,
+        expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS)
+      }
+    }, { new: true });
+
+    if (!updated) {
+      if (await respondWithLatestSession(req, res, now)) return;
+      clearSessionCookie(res);
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_REVOKED',
+        message: 'This session is no longer active. Please log in again.'
+      });
+    }
+
+    res.cookie(SESSION_COOKIE_NAME, token, cookieOptions(config.nodeEnv));
+    return res.status(200).json({ success: true, session: publicSession(updated) });
+  } catch (error) {
+    console.error('Record session activity error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to update session activity' });
+  }
+};
+
+exports.refreshSession = async (req, res) => {
+  try {
+    const currentToken = getSessionToken(req.headers.cookie);
+    const currentHash = hashSessionToken(currentToken);
+    const now = new Date();
+    if (currentHash !== req.session.tokenHash) {
+      if (await respondWithLatestSession(req, res, now)) return;
+      clearSessionCookie(res);
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.'
+      });
+    }
+
+    const nextToken = createSessionToken();
+    const session = await OwnerSession.findOneAndUpdate({
+      _id: req.session._id,
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      revokedAt: null,
+      tokenHash: currentHash,
+      lastActivityAt: { $gt: new Date(now.getTime() - SESSION_IDLE_TIMEOUT_MS) },
+      expiresAt: { $gt: now }
+    }, {
+      $set: {
+        previousTokenHash: currentHash,
+        previousTokenValidUntil: new Date(now.getTime() + TOKEN_ROTATION_GRACE_MS),
+        tokenHash: hashSessionToken(nextToken),
+        lastActivityAt: now,
+        expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_MS)
+      }
+    }, { new: true });
+
+    if (!session) {
+      if (await respondWithLatestSession(req, res, now)) return;
+      clearSessionCookie(res);
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.'
+      });
+    }
+
+    res.cookie(SESSION_COOKIE_NAME, nextToken, cookieOptions(config.nodeEnv));
+    return res.status(200).json({ success: true, session: publicSession(session) });
+  } catch (error) {
+    console.error('Refresh session error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to refresh session' });
+  }
+};
+
+exports.logoutSession = async (req, res) => {
+  try {
+    const token = getSessionToken(req.headers.cookie);
+    if (token) {
+      await OwnerSession.updateOne({
+        tokenHash: hashSessionToken(token),
+        revokedAt: null
+      }, {
+        $set: { revokedAt: new Date(), revokedReason: 'logout' }
+      });
+    }
+    clearSessionCookie(res);
+    return res.status(200).json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error.message);
+    clearSessionCookie(res);
+    return res.status(500).json({ success: false, message: 'Unable to invalidate session' });
+  }
+};
+
+exports.getOwnerSessions = async (req, res) => {
+  try {
+    const now = new Date();
+    const sessions = await OwnerSession.find({
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      revokedAt: null,
+      expiresAt: { $gt: now },
+      lastActivityAt: { $gt: new Date(now.getTime() - SESSION_IDLE_TIMEOUT_MS) }
+    }).sort({ lastActivityAt: -1 }).lean();
+    return res.status(200).json({
+      success: true,
+      sessions: sessions.map(session => ({
+        ...publicSession(session),
+        current: String(session._id) === String(req.session._id)
+      }))
+    });
+  } catch (error) {
+    console.error('List owner sessions error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to load active sessions' });
+  }
+};
+
+exports.revokeOwnerSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ success: false, message: 'Invalid session ID' });
+    }
+    const session = await OwnerSession.findOneAndUpdate({
+      _id: sessionId,
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      revokedAt: null
+    }, {
+      $set: { revokedAt: new Date(), revokedReason: 'revoked' }
+    }, { new: true });
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Active session not found' });
+    }
+    const current = String(session._id) === String(req.session._id);
+    if (current) clearSessionCookie(res);
+    return res.status(200).json({ success: true, current });
+  } catch (error) {
+    console.error('Revoke owner session error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to revoke session' });
+  }
+};
+
+exports.revokeOtherOwnerSessions = async (req, res) => {
+  try {
+    await OwnerSession.updateMany({
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      _id: { $ne: req.session._id },
+      revokedAt: null
+    }, {
+      $set: { revokedAt: new Date(), revokedReason: 'revoked' }
+    });
+    return res.status(200).json({ success: true, message: 'Other sessions were revoked' });
+  } catch (error) {
+    console.error('Revoke other sessions error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to revoke other sessions' });
+  }
+};
+
+exports.revokeAllOwnerSessions = async (req, res) => {
+  try {
+    await OwnerSession.updateMany({
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      revokedAt: null
+    }, {
+      $set: { revokedAt: new Date(), revokedReason: 'revoked' }
+    });
+    clearSessionCookie(res);
+    return res.status(200).json({ success: true, message: 'All sessions were revoked' });
+  } catch (error) {
+    console.error('Revoke all sessions error:', error.message);
+    clearSessionCookie(res);
+    return res.status(500).json({ success: false, message: 'Unable to revoke sessions' });
   }
 };

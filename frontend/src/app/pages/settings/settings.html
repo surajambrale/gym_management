@@ -52,4 +52,50 @@
 
     <button class="primary-btn" [disabled]="saving || settingsForm.invalid">{{ saving ? 'Saving…' : 'Save settings' }}</button>
   </form>
+
+  <section class="security-panel">
+    <div class="security-heading">
+      <div>
+        <span class="eyebrow">ACCOUNT PROTECTION</span>
+        <h3>Account Security</h3>
+        <p>Each sign-in creates its own server-verified session. Sessions expire after 30 minutes without activity.</p>
+      </div>
+      <button type="button" class="secondary-btn" (click)="loadSessions()" [disabled]="sessionsLoading">
+        {{ sessionsLoading ? 'Refreshing…' : 'Refresh sessions' }}
+      </button>
+    </div>
+
+    <p class="success" *ngIf="sessionsMessage">{{ sessionsMessage }}</p>
+    <p class="error" *ngIf="sessionsError" role="alert">{{ sessionsError }}</p>
+    <p *ngIf="sessionsLoading">Loading active sessions…</p>
+    <p *ngIf="!sessionsLoading && !sessionsError && sessions.length === 0" class="empty-sessions">
+      No active sessions were returned.
+    </p>
+
+    <div class="session-list" *ngIf="!sessionsLoading && sessions.length">
+      <article class="session-item" *ngFor="let session of sessions">
+        <div class="session-device">
+          <span class="device-icon" aria-hidden="true">⌘</span>
+          <div>
+            <strong>{{ session.device }} <span class="current-session" *ngIf="session.current">This device</span></strong>
+            <small>Signed in {{ session.createdAt | date:'medium' }}</small>
+            <small>Last activity {{ session.lastActivityAt | date:'medium' }}</small>
+            <small>Session renewal limit {{ session.expiresAt | date:'medium' }}</small>
+          </div>
+        </div>
+        <button type="button" class="revoke-session-btn" (click)="revokeSession(session)" [disabled]="sessionsSaving">
+          {{ session.current ? 'Log out' : 'Revoke' }}
+        </button>
+      </article>
+    </div>
+
+    <div class="security-actions">
+      <button type="button" class="secondary-btn" (click)="revokeOtherSessions()" [disabled]="sessionsSaving || !hasOtherSessions">
+        Log out other devices
+      </button>
+      <button type="button" class="danger-btn" (click)="revokeAllSessions()" [disabled]="sessionsSaving">
+        Log out all devices
+      </button>
+    </div>
+  </section>
 </section>

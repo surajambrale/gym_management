@@ -1,55 +1,83 @@
-const jwt = require('jsonwebtoken');
 const Owner = require('../models/Owner');
-const config = require('../config/env');
+const OwnerSession = require('../models/OwnerSession');
+const {
+  SESSION_IDLE_TIMEOUT_MS,
+  getSessionToken,
+  hashSessionToken,
+  isSessionIdle
+} = require('../utils/ownerSession');
+
+const reject = (res, code, message) => res.status(401).json({
+  success: false,
+  code,
+  message
+});
 
 const protectOwner = async (req, res, next) => {
+  const token = getSessionToken(req.headers.cookie);
+  if (!token) {
+    return reject(res, 'SESSION_REQUIRED', 'Please log in to continue.');
+  }
+
   try {
-    const authHeader = req.headers.authorization;
+    const now = new Date();
+    const tokenHash = hashSessionToken(token);
+    const session = await OwnerSession.findOne({
+      $or: [
+        { tokenHash },
+        {
+          previousTokenHash: tokenHash,
+          previousTokenValidUntil: { $gt: now }
+        }
+      ]
+    }).select('+tokenHash +previousTokenHash +previousTokenValidUntil');
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication token required'
-      });
+    if (!session) {
+      return reject(res, 'SESSION_INVALID', 'This session is invalid. Please log in again.');
     }
 
-    const token = authHeader.split(' ')[1];
-
-    const decoded = jwt.verify(
-      token,
-      config.jwtSecret
-    );
-
-    const owner = await Owner.findById(decoded.ownerId)
-      .select('_id tenantId businessId role isActive')
-      .lean();
-
-    if (!owner || !owner.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid or inactive account'
-      });
+    if (session.revokedAt) {
+      return reject(res, 'SESSION_REVOKED', 'This session was revoked. Please log in again.');
     }
 
-    if (
-      owner.tenantId.toString() !== decoded.tenantId ||
-      owner.role !== decoded.role
-    ) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid authentication details'
+    if (session.expiresAt <= now || isSessionIdle(session.lastActivityAt, now)) {
+      await OwnerSession.updateOne({
+        _id: session._id,
+        revokedAt: null
+      }, {
+        $set: { revokedAt: now, revokedReason: 'expired' }
       });
+      return reject(res, 'SESSION_EXPIRED', 'Your session has expired. Please log in again.');
+    }
+
+    const owner = await Owner.findOne({
+      _id: session.ownerId,
+      tenantId: session.tenantId,
+      businessId: session.businessId,
+      isActive: true
+    }).select('_id name email phone tenantId businessId role isActive').lean();
+
+    if (!owner) {
+      await OwnerSession.updateOne({
+        _id: session._id,
+        revokedAt: null
+      }, {
+        $set: { revokedAt: now, revokedReason: 'revoked' }
+      });
+      return reject(res, 'SESSION_REVOKED', 'This account is unavailable. Please log in again.');
     }
 
     req.owner = owner;
     req.tenantId = owner.tenantId;
-
+    req.session = session;
+    req.sessionId = session._id;
     next();
-
   } catch (error) {
-    return res.status(401).json({
+    console.error('Owner session verification error:', error.message);
+    return res.status(503).json({
       success: false,
-      message: 'Invalid or expired token'
+      code: 'SESSION_CHECK_UNAVAILABLE',
+      message: 'Session verification is temporarily unavailable.'
     });
   }
 };

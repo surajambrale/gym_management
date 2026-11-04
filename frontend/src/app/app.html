@@ -1,8 +1,49 @@
 <router-outlet></router-outlet>
 
 <div class="session-loading" *ngIf="sessionChecking && !isAuthRoute">
-  <h2>{{ appName }}</h2>
-  <p>Verifying your account...</p>
+  <div class="verification-glow"></div>
+  <section class="verification-card" aria-live="polite" aria-busy="true">
+    <div class="verification-brand">
+      <span class="verification-logo">SS</span>
+      <div><strong>SS FITNESS MANAGER</strong><small>Your gym. Your business. One smart platform.</small></div>
+    </div>
+    <div class="verification-shield" aria-hidden="true"><span>✓</span></div>
+    <h1>Verifying your account</h1>
+    <p>Securing your workspace and preparing your dashboard...</p>
+    <div class="verification-spinner" role="status" aria-label="Verifying your session"></div>
+    <div class="verification-security">Secure connection <span>•</span> Protected workspace</div>
+  </section>
+</div>
+
+<div class="session-loading" *ngIf="sessionVerificationError && !sessionChecking && !isAuthRoute">
+  <div class="verification-glow"></div>
+  <section class="verification-card verification-error" role="alert">
+    <div class="verification-brand">
+      <span class="verification-logo">SS</span>
+      <div><strong>SS FITNESS MANAGER</strong><small>Your gym. Your business. One smart platform.</small></div>
+    </div>
+    <div class="verification-shield verification-shield-error" aria-hidden="true">!</div>
+    <h1>We couldn't verify your session</h1>
+    <p>{{ sessionVerificationError }}</p>
+    <div class="verification-actions">
+      <button type="button" class="verification-primary" (click)="retrySessionVerification()">Try again</button>
+      <button type="button" class="verification-secondary" (click)="backToLogin()">Back to Login</button>
+    </div>
+    <div class="verification-security">Secure connection <span>•</span> Protected workspace</div>
+  </section>
+</div>
+
+<div class="session-warning-backdrop" *ngIf="sessionWarning && isAuthenticated">
+  <section class="session-warning" role="dialog" aria-modal="true" aria-labelledby="session-warning-title">
+    <div class="warning-icon" aria-hidden="true">◷</div>
+    <h2 id="session-warning-title">Your session is about to expire</h2>
+    <p>Your session is about to expire due to inactivity.</p>
+    <p class="warning-countdown">Automatic logout in <strong>{{ sessionRemainingLabel }}</strong></p>
+    <div class="warning-actions">
+      <button type="button" class="stay-button" (click)="stayLoggedIn()">Stay Logged In</button>
+      <button type="button" class="logout-now-button" (click)="logout()">Log Out Now</button>
+    </div>
+  </section>
 </div>
 
 <div class="app-layout" *ngIf="!isAuthRoute && isAuthenticated">
@@ -422,7 +463,10 @@
 
     <div [hidden]="selectedMenu !== 'Settings'">
       @defer (when selectedMenu === 'Settings') {
-        <app-business-settings (businessUpdated)="businessName = $event"></app-business-settings>
+        <app-business-settings
+          (businessUpdated)="businessName = $event"
+          (loggedOut)="logout()">
+        </app-business-settings>
       } @placeholder {
         <section class="module-loading-skeleton" aria-label="Settings loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>
       } @error {

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -14,21 +14,10 @@ export class DashboardService {
 
   constructor(private http: HttpClient) {}
 
-  private getAuthHeaders(): HttpHeaders {
-    const token = localStorage.getItem('token');
-
-    return new HttpHeaders({
-      Authorization: `Bearer ${token}`
-    });
-  }
-
   getDashboardStats(): Observable<any> {
     return this.http.get(
       `${this.apiUrl}/stats`,
-      {
-        params: { _cacheBust: Date.now() },
-        headers: this.getAuthHeaders()
-      }
+      { params: { _cacheBust: Date.now() } }
     );
   }
 

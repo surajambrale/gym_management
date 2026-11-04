@@ -1,108 +1,99 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap, throwError } from 'rxjs';
+import { Observable, finalize, tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 
-@Injectable({
-  providedIn: 'root'
-})
+const SESSION_REFERENCE_KEY = 'ssfm_session_reference';
+
+@Injectable({ providedIn: 'root' })
 export class AuthService {
+  private readonly apiUrl = `${environment.apiUrl}/auth`;
+  private authenticated = false;
 
-  private apiUrl = `${environment.apiUrl}/auth`;
+  constructor(private readonly http: HttpClient) {}
 
-  constructor(private http: HttpClient) {}
-
-  // OWNER REGISTRATION
-  register(data: any): Observable<any> {
-    return this.http.post<any>(
-      `${this.apiUrl}/register`,
-      data
-    ).pipe(
-      tap(response => {
-        if (response.success && response.token) {
-          localStorage.setItem('token', response.token);
-          localStorage.setItem(
-            'owner',
-            JSON.stringify(response.owner)
-          );
-          localStorage.setItem(
-            'business',
-            JSON.stringify(response.business)
-          );
-        }
-      })
-    );
+  register(data: unknown): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/register`, data)
+      .pipe(tap(response => this.acceptAuthentication(response)));
   }
 
-  // OWNER LOGIN
-  login(data: any): Observable<any> {
-    return this.http.post<any>(
-      `${this.apiUrl}/login`,
-      data
-    ).pipe(
-      tap(response => {
-        if (response.success && response.token) {
-          localStorage.setItem('token', response.token);
-          localStorage.setItem(
-            'owner',
-            JSON.stringify(response.owner)
-          );
-          localStorage.setItem(
-            'business',
-            JSON.stringify(response.business)
-          );
-        }
-      })
-    );
+  login(data: unknown): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/login`, data)
+      .pipe(tap(response => this.acceptAuthentication(response)));
   }
-
-  // GET OWNER PROFILE
-  // getProfile(): Observable<any> {
-  //   const token = localStorage.getItem('token');
-
-  //   return this.http.get<any>(
-  //     `${this.apiUrl}/profile`,
-  //     {
-  //       headers: {
-  //         Authorization: `Bearer ${token}`
-  //       }
-  //     }
-  //   );
-  // }
 
   getProfile(): Observable<any> {
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    return throwError(() => new Error('Authentication token not found'));
-  }
-
-  return this.http.get<any>(
-    `${this.apiUrl}/profile`,
-    {
-      params: { _cacheBust: Date.now() },
-      headers: {
-        Authorization: `Bearer ${token}`
+    return this.http.get<any>(`${this.apiUrl}/profile`, {
+      params: { _cacheBust: Date.now() }
+    }).pipe(tap(response => {
+      if (response?.success && response?.session?.id) {
+        this.authenticated = true;
+        this.writeSessionReference(response.session.id);
+        this.storeProfile(response);
       }
-    }
-  );
-}
+    }));
+  }
 
-  // CHECK LOGIN
+  recordActivity(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/activity`, {});
+  }
+
+  refreshSession(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/refresh`, {});
+  }
+
+  getSessions(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/sessions`);
+  }
+
+  revokeSession(sessionId: string): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
+  revokeOtherSessions(): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/sessions/others`);
+  }
+
+  revokeAllSessions(): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/sessions/all`);
+  }
+
+  logout(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/logout`, {}).pipe(
+      finalize(() => this.clearLocalSession())
+    );
+  }
+
   isLoggedIn(): boolean {
-    return !!localStorage.getItem('token');
+    return this.authenticated;
   }
 
-  // GET OWNER
-  getOwner(): any {
-    const owner = localStorage.getItem('owner');
-    return owner ? JSON.parse(owner) : null;
+  getSessionReference(): string {
+    return localStorage.getItem(SESSION_REFERENCE_KEY) || '';
   }
 
-  // LOGOUT
-  logout(): void {
+  clearLocalSession(): void {
+    this.authenticated = false;
     localStorage.removeItem('token');
     localStorage.removeItem('owner');
     localStorage.removeItem('business');
+    localStorage.removeItem(SESSION_REFERENCE_KEY);
+  }
+
+  private acceptAuthentication(response: any): void {
+    if (!response?.success || !response?.session?.id) return;
+    this.authenticated = true;
+    this.storeProfile(response);
+    this.writeSessionReference(response.session.id);
+    localStorage.removeItem('token');
+  }
+
+  private storeProfile(response: any): void {
+    if (response.owner) localStorage.setItem('owner', JSON.stringify(response.owner));
+    if (response.business) localStorage.setItem('business', JSON.stringify(response.business));
+  }
+
+  private writeSessionReference(sessionId: string): void {
+    localStorage.setItem(SESSION_REFERENCE_KEY, sessionId);
   }
 }
