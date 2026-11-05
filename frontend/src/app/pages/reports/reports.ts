@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 import { jsPDF } from 'jspdf';
 import { ManagementService } from '../../services/management';
 import { MembershipPlanService } from '../../services/membership-plan';
@@ -57,7 +57,7 @@ const today = (): string => {
   templateUrl: './reports.html',
   styleUrl: './reports.scss'
 })
-export class Reports implements OnInit {
+export class Reports implements OnInit, OnDestroy {
   readonly reportOptions = REPORT_OPTIONS;
   readonly categories = ['Financial', 'Members', 'Memberships', 'Attendance', 'Trainers & Staff', 'GST & Tax'];
   period = 'month';
@@ -91,6 +91,8 @@ export class Reports implements OnInit {
   detailSummary: any = null;
   detailColumns: ReportColumn[] = [];
   private latestQuery: Record<string, string | number | boolean | undefined> = {};
+  private detailSubscription?: Subscription;
+  private detailSearchTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly management: ManagementService,
@@ -101,6 +103,11 @@ export class Reports implements OnInit {
     this.loadPlans();
     this.loadTrainers();
     this.load();
+  }
+
+  ngOnDestroy(): void {
+    if (this.detailSearchTimer) clearTimeout(this.detailSearchTimer);
+    this.detailSubscription?.unsubscribe();
   }
 
   get reportGroups(): string[] {
@@ -199,15 +206,20 @@ export class Reports implements OnInit {
   }
 
   loadDetails(): void {
+    if (this.detailSearchTimer) {
+      clearTimeout(this.detailSearchTimer);
+      this.detailSearchTimer = undefined;
+    }
     if (!this.from || !this.to || this.from > this.to) {
       this.detailError = 'Select a valid date range.';
       return;
     }
+    this.detailSubscription?.unsubscribe();
     this.detailLoading = true;
     this.detailError = '';
     this.detailPage = 1;
     this.latestQuery = this.detailFilters();
-    this.management.getReport({
+    this.detailSubscription = this.management.getReport({
       ...this.latestQuery,
       detailsOnly: true,
       page: this.detailPage,
@@ -223,12 +235,22 @@ export class Reports implements OnInit {
     });
   }
 
+  onDetailSearchChange(): void {
+    if (this.detailSearchTimer) clearTimeout(this.detailSearchTimer);
+    this.detailSubscription?.unsubscribe();
+    this.detailSearchTimer = setTimeout(() => {
+      this.detailSearchTimer = undefined;
+      this.loadDetails();
+    }, 300);
+  }
+
   changePage(delta: number): void {
     const page = Math.max(1, Math.min(this.detailPages, this.detailPage + delta));
     if (page === this.detailPage) return;
+    this.detailSubscription?.unsubscribe();
     this.detailLoading = true;
     this.detailPage = page;
-    this.management.getReport({
+    this.detailSubscription = this.management.getReport({
       ...this.latestQuery,
       detailsOnly: true,
       page,

@@ -5,6 +5,7 @@ import { App } from './app';
 import { AuthService } from './services/auth';
 import { DashboardService } from './services/dashboard';
 import { SessionActivityService } from './services/session-activity';
+import { MembershipPlanService } from './services/membership-plan';
 
 describe('App', () => {
   beforeEach(async () => {
@@ -32,7 +33,24 @@ describe('App', () => {
           provide: DashboardService,
           useValue: {
             refreshRequested$: new Subject<void>(),
-            getDashboardStats: () => of({ success: true, stats: {} })
+            getDashboardStats: () => of({ success: true, stats: {} }),
+            getMembershipExpiry: () => of({
+              success: true,
+              expiringNext7DaysCount: 0,
+              expiringTodayCount: 0,
+              expiredCount: 0,
+              upcomingMembers: [],
+              members: [],
+              pagination: { total: 0, totalPages: 0 },
+              plans: []
+            })
+          }
+        },
+        {
+          provide: MembershipPlanService,
+          useValue: {
+            getPlans: () => of({ plans: [] }),
+            assignMembership: () => of({ success: true })
           }
         },
         {

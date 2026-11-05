@@ -22,11 +22,15 @@
         </div>
     </div>
 
+    <div class="message-box success" *ngIf="successMessage" role="status">
+        {{ successMessage }}
+    </div>
+
     <!-- Filters -->
     <div class="filter-card">
         <div class="search-box">
             <span>⌕</span>
-            <input type="text" [(ngModel)]="search" (keyup.enter)="searchMembers()"
+            <input type="text" [(ngModel)]="search" (ngModelChange)="onSearchInput()"
                 placeholder="Search by name or phone..." />
             <button (click)="searchMembers()">Search</button>
         </div>
@@ -196,8 +200,9 @@
                                     Edit
                                 </button>
 
-                                <button type="button" class="delete-btn" (click)="deleteMember(member)">
-                                    Delete Permanently
+                                <button type="button" class="delete-btn" (click)="deleteMember(member)"
+                                    [disabled]="deletingMemberId === member._id">
+                                    {{ deletingMemberId === member._id ? 'Deleting…' : 'Delete Permanently' }}
                                 </button>
 
                                 <button type="button" class="qr-btn" (click)="generateQR(member)">

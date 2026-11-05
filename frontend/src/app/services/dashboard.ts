@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -19,6 +19,23 @@ export class DashboardService {
       `${this.apiUrl}/stats`,
       { params: { _cacheBust: Date.now() } }
     );
+  }
+
+  getMembershipExpiry(filters: {
+    status?: string;
+    search?: string;
+    planId?: string;
+    page?: number;
+    limit?: number;
+    sort?: 'asc' | 'desc';
+  } = {}): Observable<any> {
+    let params = new HttpParams().set('_cacheBust', Date.now());
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        params = params.set(key, value);
+      }
+    });
+    return this.http.get(`${this.apiUrl}/membership-expiry`, { params });
   }
 
   requestRefresh(): void {

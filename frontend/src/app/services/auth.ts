@@ -58,6 +58,30 @@ export class AuthService {
     return this.http.delete<any>(`${this.apiUrl}/sessions/all`);
   }
 
+  changePassword(data: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/change-password`, data);
+  }
+
+  forgotPassword(email: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/forgot-password`, { email });
+  }
+
+  validateResetToken(token: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/validate-reset-token`, { token });
+  }
+
+  resetPassword(data: {
+    token: string;
+    newPassword: string;
+    confirmPassword: string;
+  }): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/reset-password`, data);
+  }
+
   logout(): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/logout`, {}).pipe(
       finalize(() => this.clearLocalSession())

@@ -312,6 +312,8 @@
         </ng-template>
       </div>
 
+      <app-membership-expiry (memberSelected)="openMemberFromExpiry($event)"></app-membership-expiry>
+
       <div class="panel members-panel" *ngIf="!dashboardError">
         <div class="panel-header">
           <div>
@@ -384,7 +386,7 @@
     <!-- Members Module: inline dashboard content -->
     <div [hidden]="selectedMenu !== 'Members'">
       @defer (when selectedMenu === 'Members') {
-        <app-members [active]="selectedMenu === 'Members'"></app-members>
+        <app-members [active]="selectedMenu === 'Members'" [focusMember]="memberToFocus"></app-members>
       } @placeholder {
         <section class="module-loading-skeleton" aria-label="Members loading">
           <div class="skeleton-line skeleton-title"></div>
@@ -465,7 +467,8 @@
       @defer (when selectedMenu === 'Settings') {
         <app-business-settings
           (businessUpdated)="businessName = $event"
-          (loggedOut)="logout()">
+          (loggedOut)="logout()"
+          (passwordChanged)="logout('password-changed')">
         </app-business-settings>
       } @placeholder {
         <section class="module-loading-skeleton" aria-label="Settings loading"><div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div></section>

@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 import { jsPDF } from 'jspdf';
 import { ManagementService } from '../../services/management';
 import { MemberService } from '../../services/member';
@@ -48,7 +48,7 @@ const todayString = (): string => {
   templateUrl: './trainers-staff.html',
   styleUrl: './trainers-staff.scss'
 })
-export class TrainersStaff implements OnInit {
+export class TrainersStaff implements OnInit, OnDestroy {
   trainers: TeamRecord[] = [];
   staff: TeamRecord[] = [];
   trainerTotal = 0;
@@ -107,6 +107,11 @@ export class TrainersStaff implements OnInit {
     salaryTransactions: false
   };
   private readonly businessName = this.readBusinessName();
+  private trainerRequest?: Subscription;
+  private staffRequest?: Subscription;
+  private trainerSearchTimer?: ReturnType<typeof setTimeout>;
+  private staffSearchTimer?: ReturnType<typeof setTimeout>;
+  private pendingDirectoryRequests = 0;
 
   constructor(
     private readonly management: ManagementService,
@@ -116,6 +121,13 @@ export class TrainersStaff implements OnInit {
   ngOnInit(): void {
     this.load();
     this.loadReport();
+  }
+
+  ngOnDestroy(): void {
+    this.clearSearchTimer('Trainer');
+    this.clearSearchTimer('Staff');
+    this.trainerRequest?.unsubscribe();
+    this.staffRequest?.unsubscribe();
   }
 
   private emptyForm(): TeamForm {
@@ -134,24 +146,25 @@ export class TrainersStaff implements OnInit {
   }
 
   load(): void {
-    this.loading = true;
     this.errorMessage = '';
-    let remaining = 2;
-    const done = (): void => {
-      remaining -= 1;
-      if (remaining === 0) this.loading = false;
-    };
-    this.loadDirectory('Trainer', done);
-    this.loadDirectory('Staff', done);
+    this.loadDirectory('Trainer');
+    this.loadDirectory('Staff');
   }
 
-  private loadDirectory(role: 'Trainer' | 'Staff', done: () => void): void {
+  private loadDirectory(role: 'Trainer' | 'Staff'): void {
+    this.clearSearchTimer(role);
+    this.cancelDirectoryRequest(role);
+    this.pendingDirectoryRequests++;
+    this.loading = true;
     const isTrainer = role === 'Trainer';
     const page = isTrainer ? this.trainerPage : this.staffPage;
     const status = isTrainer ? this.trainerStatus : this.staffStatus;
     const search = isTrainer ? this.trainerSearch : this.staffSearch;
-    this.management.getStaff({ role, status, search, page, limit: this.pageSize })
-      .pipe(finalize(done))
+    const request = this.management.getStaff({ role, status, search, page, limit: this.pageSize })
+      .pipe(finalize(() => {
+        this.pendingDirectoryRequests = Math.max(0, this.pendingDirectoryRequests - 1);
+        this.loading = this.pendingDirectoryRequests > 0;
+      }))
       .subscribe({
         next: response => {
           if (isTrainer) {
@@ -173,23 +186,54 @@ export class TrainersStaff implements OnInit {
           this.errorMessage = error.error?.message || `Unable to load ${role.toLowerCase()} records.`;
         }
       });
+    if (isTrainer) this.trainerRequest = request;
+    else this.staffRequest = request;
+  }
+
+  onDirectorySearchInput(role: 'Trainer' | 'Staff'): void {
+    this.clearSearchTimer(role);
+    this.cancelDirectoryRequest(role);
+    const timer = setTimeout(() => {
+      if (role === 'Trainer') this.trainerSearchTimer = undefined;
+      else this.staffSearchTimer = undefined;
+      this.searchDirectory(role);
+    }, 300);
+    if (role === 'Trainer') this.trainerSearchTimer = timer;
+    else this.staffSearchTimer = timer;
+  }
+
+  private clearSearchTimer(role: 'Trainer' | 'Staff'): void {
+    const timer = role === 'Trainer' ? this.trainerSearchTimer : this.staffSearchTimer;
+    if (timer) clearTimeout(timer);
+    if (role === 'Trainer') this.trainerSearchTimer = undefined;
+    else this.staffSearchTimer = undefined;
+  }
+
+  private cancelDirectoryRequest(role: 'Trainer' | 'Staff'): void {
+    if (role === 'Trainer') {
+      this.trainerRequest?.unsubscribe();
+      this.trainerRequest = undefined;
+    } else {
+      this.staffRequest?.unsubscribe();
+      this.staffRequest = undefined;
+    }
   }
 
   searchDirectory(role: 'Trainer' | 'Staff'): void {
+    this.clearSearchTimer(role);
     if (role === 'Trainer') this.trainerPage = 1;
     else this.staffPage = 1;
-    this.loading = true;
-    this.loadDirectory(role, () => this.loading = false);
+    this.loadDirectory(role);
   }
 
   changePage(role: 'Trainer' | 'Staff', delta: number): void {
+    this.clearSearchTimer(role);
     if (role === 'Trainer') {
       this.trainerPage = Math.max(1, Math.min(this.trainerPages, this.trainerPage + delta));
     } else {
       this.staffPage = Math.max(1, Math.min(this.staffPages, this.staffPage + delta));
     }
-    this.loading = true;
-    this.loadDirectory(role, () => this.loading = false);
+    this.loadDirectory(role);
   }
 
   toggleForm(role: 'Trainer' | 'Staff'): void {
@@ -332,7 +376,7 @@ export class TrainersStaff implements OnInit {
           this.selectedMemberId = '';
           this.successMessage = 'Member assigned to trainer.';
           this.openAssignments(this.assignmentTrainer!);
-          this.loadDirectory('Trainer', () => undefined);
+          this.loadDirectory('Trainer');
           this.loadReport();
         },
         error: error => {
@@ -348,7 +392,7 @@ export class TrainersStaff implements OnInit {
       next: () => {
         this.assignedMembers = this.assignedMembers.filter(item => item._id !== member._id);
         this.successMessage = `${member.fullName} removed from trainer.`;
-        this.loadDirectory('Trainer', () => undefined);
+        this.loadDirectory('Trainer');
         this.loadReport();
       },
       error: error => {

@@ -15,6 +15,7 @@ import { TrainersStaff } from './pages/trainers-staff/trainers-staff';
 import { Reports } from './pages/reports/reports';
 import { BusinessSettings } from './pages/settings/settings';
 import { SubscriptionPage } from './pages/subscription/subscription';
+import { ExpiringMember, MembershipExpiry } from './pages/membership-expiry/membership-expiry';
 import { SessionActivityService } from './services/session-activity';
 
 import { environment } from '../environments/environment';
@@ -32,7 +33,8 @@ import { environment } from '../environments/environment';
     TrainersStaff,
     Reports,
     BusinessSettings,
-    SubscriptionPage
+    SubscriptionPage,
+    MembershipExpiry
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
@@ -56,6 +58,7 @@ export class App implements OnInit, OnDestroy {
 
   stats: any[] = [];
   recentMembers: any[] = [];
+  memberToFocus: ExpiringMember | null = null;
   readonly dashboardStatPlaceholders = [0, 1, 2, 3];
 
   dashboardLoading = false;
@@ -178,7 +181,9 @@ export class App implements OnInit, OnDestroy {
     const currentUrl = this.router.url;
     if (
       currentUrl.startsWith('/login') ||
-      currentUrl.startsWith('/register')
+      currentUrl.startsWith('/register') ||
+      currentUrl.startsWith('/forgot-password') ||
+      currentUrl.startsWith('/reset-password')
     ) {
       this.sessionChecking = false;
       this.sessionVerificationError = '';
@@ -277,7 +282,9 @@ export class App implements OnInit, OnDestroy {
   get isAuthRoute(): boolean {
     return (
       this.router.url.startsWith('/register') ||
-      this.router.url.startsWith('/login')
+      this.router.url.startsWith('/login') ||
+      this.router.url.startsWith('/forgot-password') ||
+      this.router.url.startsWith('/reset-password')
     );
   }
 
@@ -333,12 +340,18 @@ export class App implements OnInit, OnDestroy {
   // SIDEBAR MENU
   selectMenu(name: string): void {
 
+    if (name !== 'Members') this.memberToFocus = null;
     this.selectedMenu = name;
     this.mobileMenuOpen = false;
 
     if (name === 'Dashboard') {
       this.loadDashboardData(true);
     }
+  }
+
+  openMemberFromExpiry(member: ExpiringMember): void {
+    this.memberToFocus = member;
+    this.selectMenu('Members');
   }
 
   // MOBILE MENU
@@ -387,8 +400,6 @@ export class App implements OnInit, OnDestroy {
       .subscribe({
 
         next: (response) => {
-
-          console.log('DASHBOARD RESPONSE:', response);
 
           if (!response?.success || !response?.stats) {
             this.dashboardError = 'Unable to load dashboard data.';

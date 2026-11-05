@@ -53,7 +53,7 @@
     </form>
 
     <div class="directory-tools">
-      <input aria-label="Search trainers" placeholder="Search trainers…" [(ngModel)]="trainerSearch" (keyup.enter)="searchDirectory('Trainer')">
+      <input aria-label="Search trainers" placeholder="Search trainers…" [(ngModel)]="trainerSearch" (ngModelChange)="onDirectorySearchInput('Trainer')">
       <select aria-label="Filter trainers by status" [(ngModel)]="trainerStatus" (change)="searchDirectory('Trainer')">
         <option value="">All statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option>
       </select>
@@ -118,7 +118,7 @@
     </form>
 
     <div class="directory-tools">
-      <input aria-label="Search staff" placeholder="Search staff…" [(ngModel)]="staffSearch" (keyup.enter)="searchDirectory('Staff')">
+      <input aria-label="Search staff" placeholder="Search staff…" [(ngModel)]="staffSearch" (ngModelChange)="onDirectorySearchInput('Staff')">
       <select aria-label="Filter staff by status" [(ngModel)]="staffStatus" (change)="searchDirectory('Staff')">
         <option value="">All statuses</option><option value="Active">Active</option><option value="Inactive">Inactive</option>
       </select>

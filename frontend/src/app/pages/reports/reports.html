@@ -205,7 +205,7 @@
           </select>
         </label>
         <label>Search member / phone / reference
-          <input [(ngModel)]="search" name="search" (keyup.enter)="loadDetails()" placeholder="Search matching records">
+          <input [(ngModel)]="search" name="search" (ngModelChange)="onDetailSearchChange()" placeholder="Search matching records">
         </label>
         <label *ngIf="['revenue','pending','refunds','failed','gst'].includes(reportType)">Payment status
           <select [(ngModel)]="paymentStatus" name="paymentStatus">

@@ -16,6 +16,7 @@ import { AuthService } from '../../services/auth';
 export class BusinessSettings implements OnInit {
   @Output() businessUpdated = new EventEmitter<string>();
   @Output() loggedOut = new EventEmitter<void>();
+  @Output() passwordChanged = new EventEmitter<void>();
 
   loading = false;
   saving = false;
@@ -25,6 +26,17 @@ export class BusinessSettings implements OnInit {
   sessionsSaving = false;
   sessionsError = '';
   sessionsMessage = '';
+  passwordChanging = false;
+  passwordError = '';
+  passwordSuccess = '';
+  showCurrentPassword = false;
+  showNewPassword = false;
+  showConfirmPassword = false;
+  passwordForm = {
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  };
   sessions: Array<{
     id: string;
     device: string;
@@ -36,6 +48,7 @@ export class BusinessSettings implements OnInit {
   form = {
     businessName: '',
     businessType: 'Gym',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
     phone: '',
     email: '',
     address: '',
@@ -64,6 +77,68 @@ export class BusinessSettings implements OnInit {
 
   get hasOtherSessions(): boolean {
     return this.sessions.some(session => !session.current);
+  }
+
+  get passwordStrength(): number {
+    const password = this.passwordForm.newPassword;
+    if (!password) return 0;
+    return [
+      password.length >= 8,
+      password.length >= 12,
+      /[a-z]/.test(password) && /[A-Z]/.test(password),
+      /\d/.test(password) && /[^A-Za-z0-9]/.test(password)
+    ].filter(Boolean).length;
+  }
+
+  get passwordStrengthLabel(): string {
+    if (!this.passwordForm.newPassword) return 'Not entered';
+    return ['Weak', 'Weak', 'Fair', 'Good', 'Strong'][this.passwordStrength];
+  }
+
+  changePassword(): void {
+    if (this.passwordChanging) return;
+    this.passwordError = '';
+    this.passwordSuccess = '';
+
+    if (!this.passwordForm.currentPassword) {
+      this.passwordError = 'Enter your current password.';
+      return;
+    }
+    if (this.passwordForm.newPassword.length < 8) {
+      this.passwordError = 'New password must be at least 8 characters long.';
+      return;
+    }
+    if (new TextEncoder().encode(this.passwordForm.newPassword).length > 72) {
+      this.passwordError = 'New password must be 72 bytes or fewer.';
+      return;
+    }
+    if (this.passwordForm.newPassword !== this.passwordForm.confirmPassword) {
+      this.passwordError = 'New password and confirmation do not match.';
+      return;
+    }
+
+    this.passwordChanging = true;
+    this.auth.changePassword(this.passwordForm)
+      .pipe(finalize(() => this.passwordChanging = false))
+      .subscribe({
+        next: response => {
+          this.passwordSuccess = response.message || 'Password changed. Please sign in again.';
+          this.passwordForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
+          this.passwordChanged.emit();
+        },
+        error: error => {
+          this.passwordError = error.error?.message || 'Unable to change password. Please try again.';
+        }
+      });
+  }
+
+  cancelPasswordChange(): void {
+    this.passwordForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
+    this.passwordError = '';
+    this.passwordSuccess = '';
+    this.showCurrentPassword = false;
+    this.showNewPassword = false;
+    this.showConfirmPassword = false;
   }
 
   loadSessions(): void {
@@ -155,6 +230,7 @@ export class BusinessSettings implements OnInit {
           this.form = {
             businessName: business.businessName || '',
             businessType: business.businessType || 'Other',
+            timeZone: business.timeZone || 'Asia/Kolkata',
             phone: business.phone || '',
             email: business.email || '',
             address: business.address || '',
@@ -189,6 +265,7 @@ export class BusinessSettings implements OnInit {
           this.form = {
             businessName: business.businessName,
             businessType: business.businessType,
+            timeZone: business.timeZone || 'Asia/Kolkata',
             phone: business.phone || '',
             email: business.email || '',
             address: business.address || '',

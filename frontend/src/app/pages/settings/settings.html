@@ -10,6 +10,10 @@
         <option *ngFor="let type of businessTypes" [value]="type">{{ type }}</option>
       </select>
     </label>
+    <label>Business time zone
+      <input name="timeZone" [(ngModel)]="form.timeZone" required placeholder="Asia/Kolkata">
+      <small>Use an IANA time zone, for example Asia/Kolkata or America/New_York.</small>
+    </label>
     <label>Phone<input name="phone" [(ngModel)]="form.phone"></label>
     <label>Email<input type="email" name="email" [(ngModel)]="form.email"></label>
     <label class="wide">Address<textarea name="address" [(ngModel)]="form.address" rows="3"></textarea></label>
@@ -54,6 +58,62 @@
   </form>
 
   <section class="security-panel">
+    <div class="security-heading">
+      <div>
+        <span class="eyebrow">PASSWORD &amp; SIGN-IN</span>
+        <h3>Change Password</h3>
+        <p>Choose a password you do not use elsewhere. Changing it signs out every device.</p>
+      </div>
+    </div>
+    <p class="success" *ngIf="passwordSuccess" role="status">{{ passwordSuccess }}</p>
+    <p class="error" *ngIf="passwordError" role="alert">{{ passwordError }}</p>
+    <form class="password-form" (ngSubmit)="changePassword()">
+      <label>
+        Current Password
+        <span class="password-input">
+          <input [type]="showCurrentPassword ? 'text' : 'password'" name="currentPassword"
+            [(ngModel)]="passwordForm.currentPassword" autocomplete="current-password" required>
+          <button type="button" class="password-visibility" (click)="showCurrentPassword = !showCurrentPassword"
+            [attr.aria-label]="showCurrentPassword ? 'Hide current password' : 'Show current password'">
+            {{ showCurrentPassword ? 'Hide' : 'Show' }}
+          </button>
+        </span>
+      </label>
+      <label>
+        New Password
+        <span class="password-input">
+          <input [type]="showNewPassword ? 'text' : 'password'" name="newPassword"
+            [(ngModel)]="passwordForm.newPassword" autocomplete="new-password" minlength="8" maxlength="72" required>
+          <button type="button" class="password-visibility" (click)="showNewPassword = !showNewPassword"
+            [attr.aria-label]="showNewPassword ? 'Hide new password' : 'Show new password'">
+            {{ showNewPassword ? 'Hide' : 'Show' }}
+          </button>
+        </span>
+      </label>
+      <div class="password-strength" aria-live="polite">
+        <div class="strength-heading"><span>Password strength</span><strong>{{ passwordStrengthLabel }}</strong></div>
+        <meter min="0" max="4" [value]="passwordStrength" [attr.aria-label]="'Password strength: ' + passwordStrengthLabel"></meter>
+        <small>Use at least 8 characters. A longer mix of letters, numbers, and symbols is stronger.</small>
+      </div>
+      <label>
+        Confirm New Password
+        <span class="password-input">
+          <input [type]="showConfirmPassword ? 'text' : 'password'" name="confirmPassword"
+            [(ngModel)]="passwordForm.confirmPassword" autocomplete="new-password" required>
+          <button type="button" class="password-visibility" (click)="showConfirmPassword = !showConfirmPassword"
+            [attr.aria-label]="showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'">
+            {{ showConfirmPassword ? 'Hide' : 'Show' }}
+          </button>
+        </span>
+      </label>
+      <div class="password-actions">
+        <button type="submit" class="primary-btn" [disabled]="passwordChanging">
+          {{ passwordChanging ? 'Changing password…' : 'Change Password' }}
+        </button>
+        <button type="button" class="secondary-btn" (click)="cancelPasswordChange()" [disabled]="passwordChanging">Cancel</button>
+      </div>
+    </form>
+
     <div class="security-heading">
       <div>
         <span class="eyebrow">ACCOUNT PROTECTION</span>

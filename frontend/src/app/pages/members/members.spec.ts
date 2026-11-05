@@ -1,11 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { Members } from './members';
 import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
 import { PaymentService } from '../../services/payment';
+import { DashboardService } from '../../services/dashboard';
 
 describe('Members', () => {
   let component: Members;
@@ -49,7 +50,8 @@ describe('Members', () => {
       providers: [
         { provide: MemberService, useValue: memberService },
         { provide: MembershipPlanService, useValue: planService },
-        { provide: PaymentService, useValue: paymentService }
+        { provide: PaymentService, useValue: paymentService },
+        { provide: DashboardService, useValue: { requestRefresh: vi.fn(), refreshRequested$: of() } }
       ]
     }).compileComponents();
 
@@ -74,6 +76,42 @@ describe('Members', () => {
 
     expect(planService.getMemberMemberships).toHaveBeenCalledTimes(1);
     expect(component.membershipHistory).toEqual(records);
+  });
+
+  it('debounces member search input and sends the latest term', async () => {
+    component.search = 'ali';
+    component.onSearchInput();
+    component.search = 'alice';
+    component.onSearchInput();
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    expect(memberService.getMembers).toHaveBeenCalledTimes(2);
+    expect(memberService.getMembers).toHaveBeenLastCalledWith(
+      'alice',
+      '',
+      1,
+      10,
+      undefined,
+      undefined
+    );
+  });
+
+  it('cancels outdated member requests so stale responses cannot replace current results', () => {
+    const staleResponse = new Subject<any>();
+    memberService.getMembers.mockReturnValueOnce(staleResponse);
+
+    component.search = 'older';
+    component.loadMembers();
+    component.search = 'newer';
+    component.loadMembers();
+    staleResponse.next({
+      members: [{ _id: 'stale-member' }],
+      pagination: { totalMembers: 1, totalPages: 1 }
+    });
+
+    expect(component.members).toEqual([]);
+    expect(memberService.getMembers).toHaveBeenCalledTimes(3);
   });
 
   it('shows an empty state for members without membership history', () => {

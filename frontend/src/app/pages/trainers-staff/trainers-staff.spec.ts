@@ -78,4 +78,22 @@ describe('TrainersStaff', () => {
     );
     expect(component.successMessage).toBe('Trainer added.');
   });
+
+  it('debounces trainer search and requests the latest directory value', async () => {
+    component.trainerSearch = 'al';
+    component.onDirectorySearchInput('Trainer');
+    component.trainerSearch = 'alex';
+    component.onDirectorySearchInput('Trainer');
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    expect(management.getStaff).toHaveBeenCalledTimes(3);
+    expect(management.getStaff).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        role: 'Trainer',
+        search: 'alex',
+        page: 1
+      })
+    );
+  });
 });

@@ -129,4 +129,19 @@ describe('Reports', () => {
       })
     );
   });
+
+  it('debounces detail searches and requests the latest search term', async () => {
+    component.search = 'kim';
+    component.onDetailSearchChange();
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+
+    expect(management.getReport).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        detailsOnly: true,
+        search: 'kim',
+        page: 1
+      })
+    );
+  });
 });

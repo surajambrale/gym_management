@@ -36,6 +36,11 @@ export class Login {
       this.successMessage = 'Your session has expired. Please log in again.';
     } else if (reason === 'revoked') {
       this.successMessage = 'This session is no longer active. Please log in again.';
+    } else if (reason === 'password-changed') {
+      this.successMessage = 'Your password was changed. Sign in with your new password.';
+    }
+    if (this.route.snapshot.queryParamMap.get('reset') === 'success') {
+      this.successMessage = 'Password reset successfully. Sign in with your new password.';
     }
     this.loginForm = this.fb.group({
       email: ['', [Validators.required, Validators.email]],

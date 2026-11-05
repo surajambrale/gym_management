@@ -14,6 +14,7 @@ import { MemberService } from '../../services/member';
 import { MembershipPlanService } from '../../services/membership-plan';
 import * as QRCode from 'qrcode';
 import { PaymentService } from '../../services/payment';
+import { DashboardService } from '../../services/dashboard';
 import { jsPDF } from 'jspdf';
 import { environment } from '../../../environments/environment';
 import {
@@ -25,7 +26,12 @@ import {
   switchMap,
   of,
   throwError,
-  timeout
+  timeout,
+  Subject,
+  timer,
+  map,
+  catchError,
+  distinctUntilChanged
 } from 'rxjs';
 
 @Component({
@@ -38,6 +44,7 @@ import {
 export class Members implements OnInit, OnChanges, OnDestroy {
   readonly appName = environment.appName;
   @Input() active = false;
+  @Input() focusMember: any = null;
 
   members: any[] = [];
   plans: any[] = [];
@@ -70,9 +77,21 @@ export class Members implements OnInit, OnChanges, OnDestroy {
   loading = false;
   dataLoaded = false;
   errorMessage = '';
+  successMessage = '';
+  deletingMemberId = '';
   private lastLoadedAt = 0;
   private plansLoadedAt = 0;
   private plansLoading = false;
+  private readonly memberQueries = new Subject<{
+    search: string;
+    status: string;
+    page: number;
+    from?: string;
+    to?: string;
+    debounce: boolean;
+    validationError?: string;
+  }>();
+  private memberQuerySubscription?: Subscription;
 
   saving = false;
   showForm = false;
@@ -125,15 +144,92 @@ totalDueAmount = 0;
     private memberService: MemberService,
     private planService: MembershipPlanService,
     private paymentService: PaymentService,
+    private dashboardService: DashboardService,
     private changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    this.memberQuerySubscription = this.memberQueries.pipe(
+      distinctUntilChanged((previous, current) =>
+        previous.debounce &&
+        current.debounce &&
+        previous.search === current.search &&
+        previous.status === current.status &&
+        previous.page === current.page &&
+        previous.from === current.from &&
+        previous.to === current.to
+      ),
+      switchMap(query => {
+        this.loading = true;
+        this.errorMessage = '';
+        this.filterValidationMessage = '';
+
+        if (query.validationError) {
+          return of({ type: 'validation' as const, message: query.validationError });
+        }
+
+        const request = query.debounce
+          ? timer(300).pipe(
+              switchMap(() => this.memberService.getMembers(
+                query.search,
+                query.status,
+                query.page,
+                this.limit,
+                query.from,
+                query.to
+              ))
+            )
+          : this.memberService.getMembers(
+              query.search,
+              query.status,
+              query.page,
+              this.limit,
+              query.from,
+              query.to
+            );
+
+        return request.pipe(
+          map(response => ({ type: 'success' as const, response })),
+          catchError(error => of({ type: 'error' as const, error }))
+        );
+      })
+    ).subscribe(result => {
+      this.loading = false;
+      if (result.type === 'validation') {
+        this.filterValidationMessage = result.message;
+        this.members = [];
+        this.totalMembers = 0;
+        this.totalPages = 0;
+        return;
+      }
+
+      if (result.type === 'error') {
+        console.error('Members loading error:', result.error);
+        this.errorMessage =
+          result.error.error?.message || 'Unable to load members';
+        return;
+      }
+
+      const response = result.response;
+      this.members = response.members || [];
+      this.members.forEach(member => {
+        if (this.selectedMemberRecords.has(member._id)) {
+          this.selectedMemberRecords.set(member._id, member);
+        }
+      });
+      this.totalMembers = response.pagination?.totalMembers || 0;
+      this.totalPages = response.pagination?.totalPages || 0;
+      this.dataLoaded = true;
+      this.lastLoadedAt = Date.now();
+    });
     this.loadMembers();
     this.loadPlans();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['focusMember']?.currentValue) {
+      this.openMembershipHistory(changes['focusMember'].currentValue);
+    }
     if (
       changes['active'] &&
       !changes['active'].firstChange &&
@@ -148,6 +244,8 @@ totalDueAmount = 0;
   }
 
   ngOnDestroy(): void {
+    this.memberQuerySubscription?.unsubscribe();
+    this.memberQueries.complete();
     this.historySubscription?.unsubscribe();
     this.financialSubscription?.unsubscribe();
     this.qrSubscription?.unsubscribe();
@@ -174,48 +272,16 @@ totalDueAmount = 0;
   }
 
   // Load members
-  loadMembers(): void {
-    this.loading = true;
-    this.errorMessage = '';
-    this.filterValidationMessage = '';
+  loadMembers(debounce = false): void {
     const dateBounds = this.getDateBounds();
-
-    if (dateBounds.error) {
-      this.loading = false;
-      this.filterValidationMessage = dateBounds.error;
-      this.members = [];
-      this.totalMembers = 0;
-      this.totalPages = 0;
-      return;
-    }
-
-    this.memberService.getMembers(
-      this.search,
-      this.status,
-      this.currentPage,
-      this.limit,
-      dateBounds.from,
-      dateBounds.to
-    ).subscribe({
-      next: (response) => {
-        this.members = response.members || [];
-        this.members.forEach(member => {
-          if (this.selectedMemberRecords.has(member._id)) {
-            this.selectedMemberRecords.set(member._id, member);
-          }
-        });
-        this.totalMembers = response.pagination?.totalMembers || 0;
-        this.totalPages = response.pagination?.totalPages || 0;
-        this.dataLoaded = true;
-        this.lastLoadedAt = Date.now();
-        this.loading = false;
-      },
-      error: (error) => {
-        console.error('Members loading error:', error);
-        this.errorMessage =
-          error.error?.message || 'Unable to load members';
-        this.loading = false;
-      }
+    this.memberQueries.next({
+      search: this.search,
+      status: this.status,
+      page: this.currentPage,
+      from: dateBounds.from,
+      to: dateBounds.to,
+      debounce,
+      validationError: dateBounds.error
     });
   }
 
@@ -279,6 +345,11 @@ totalDueAmount = 0;
   searchMembers(): void {
     this.currentPage = 1;
     this.loadMembers();
+  }
+
+  onSearchInput(): void {
+    this.currentPage = 1;
+    this.loadMembers(true);
   }
 
   onDateRangeChange(): void {
@@ -803,7 +874,7 @@ totalDueAmount = 0;
       !this.memberForm.fullName.trim() ||
       !this.memberForm.phone.trim()
     ) {
-      alert('Please enter member name and phone number');
+      this.errorMessage = 'Please enter member name and phone number';
       return;
     }
 
@@ -811,13 +882,15 @@ totalDueAmount = 0;
 
     if (!this.isEditMode && this.memberForm.planId) {
       if (!this.memberForm.membershipStartDate) {
-        alert('Please select membership start date');
+        this.errorMessage = 'Please select membership start date';
         return;
       }
 
     }
 
     this.saving = true;
+    this.errorMessage = '';
+    this.successMessage = '';
 
     const request = this.isEditMode
       ? this.memberService.updateMember(
@@ -843,22 +916,22 @@ totalDueAmount = 0;
 
         if (!this.isEditMode && this.memberForm.planId && !memberId) {
           this.saving = false;
-          alert(
-            'Member was created, but member ID was not returned. Please assign membership from the member record.'
-          );
+          this.errorMessage =
+            'Member was created, but member ID was not returned. Please assign membership from the member record.';
           this.closeForm();
           this.loadMembers();
           return;
         }
 
         this.saving = false;
-        alert(response.message || 'Member saved successfully');
+        this.successMessage = response.message || 'Member saved successfully';
         this.closeForm();
+        if (!this.isEditMode) this.currentPage = 1;
         this.loadMembers();
       },
       error: (error) => {
         this.saving = false;
-        alert(error.error?.message || 'Unable to save member');
+        this.errorMessage = error.error?.message || 'Unable to save member';
       }
     });
   }
@@ -873,20 +946,22 @@ totalDueAmount = 0;
     };
 
     this.planService.assignMembership(membershipData).subscribe({
-      next: (response) => {
+      next: () => {
         this.saving = false;
         this.historyCache.delete(memberId);
         this.financialCache.delete(memberId);
-        alert('Member and membership saved successfully. Collect payment from Payments & Fees.');
+        this.successMessage =
+          'Member and membership saved successfully. Collect payment from Payments & Fees.';
         this.closeForm();
+        this.currentPage = 1;
         this.loadMembers();
+        this.dashboardService.requestRefresh();
       },
       error: (error) => {
         this.saving = false;
-        alert(
+        this.errorMessage =
           'Member created, but membership assignment failed: ' +
-          (error.error?.message || 'Please try assigning membership again.')
-        );
+          (error.error?.message || 'Please try assigning membership again.');
         this.closeForm();
         this.loadMembers();
       }
@@ -895,25 +970,33 @@ totalDueAmount = 0;
 
   // Delete member
   deleteMember(member: any): void {
+    if (this.deletingMemberId) return;
     const confirmed = confirm(
       `Permanently delete ${member.fullName} and remove eligible operational data? Financial payment records required for retention will be preserved and anonymized. This cannot be undone.`
     );
 
     if (!confirmed) return;
 
+    this.deletingMemberId = member._id;
+    this.errorMessage = '';
+    this.successMessage = '';
     this.memberService.deleteMember(member._id).subscribe({
       next: (response) => {
-        alert(response.message);
-
-        if (this.members.length === 1 && this.currentPage > 1) {
-          this.currentPage--;
-        }
-
+        this.members = this.members.filter(item => item._id !== member._id);
         this.selectedMemberRecords.delete(member._id);
-        this.loadMembers();
+        this.totalMembers = Math.max(0, this.totalMembers - 1);
+        this.totalPages = Math.ceil(this.totalMembers / this.limit);
+        this.successMessage = response.message || 'Member deleted successfully.';
+        this.deletingMemberId = '';
+
+        if (this.members.length === 0 && this.currentPage > 1) {
+          this.currentPage--;
+          this.loadMembers();
+        }
       },
       error: (error) => {
-        alert(error.error?.message || 'Unable to delete member');
+        this.deletingMemberId = '';
+        this.errorMessage = error.error?.message || 'Unable to delete member';
       }
     });
   }
