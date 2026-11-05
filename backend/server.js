@@ -28,6 +28,23 @@ app.use(cors({
 
 app.use(express.json());
 
+if (config.nodeEnv !== 'production') {
+  app.use('/api', (req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+    res.on('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const endpoint = req.route?.path
+        ? `${req.baseUrl}${req.route.path}`
+        : `${req.baseUrl}[unmatched]`;
+      const slowLabel = durationMs >= 500 ? ' slow' : '';
+      console.info(
+        `[api] ${req.method} ${endpoint} ${res.statusCode} ${durationMs.toFixed(1)}ms${slowLabel}`
+      );
+    });
+    next();
+  });
+}
+
 // API Routes
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));

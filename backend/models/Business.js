@@ -19,6 +19,12 @@ const businessSchema = new mongoose.Schema(
       required: true
     },
 
+    timeZone: {
+      type: String,
+      trim: true,
+      default: process.env.DASHBOARD_TIME_ZONE || 'Asia/Kolkata'
+    },
+
     ownerName: {
       type: String,
       required: true,

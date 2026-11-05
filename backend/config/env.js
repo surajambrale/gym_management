@@ -25,6 +25,10 @@ if (nodeEnv === 'production' && !process.env.FRONTEND_URL?.trim()) {
 }
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+if (process.env.SMTP_PORT && (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535)) {
+  throw new Error('SMTP_PORT must be an integer between 1 and 65535');
+}
 const allowedOrigins = new Set([frontendUrl]);
 if (nodeEnv !== 'production') {
   allowedOrigins.add('http://localhost:4200');
@@ -37,6 +41,13 @@ module.exports = Object.freeze({
   mongodbUri: process.env.MONGODB_URI,
   jwtSecret: process.env.JWT_SECRET || '',
   frontendUrl,
+  smtp: Object.freeze({
+    host: process.env.SMTP_HOST || '',
+    port: smtpPort,
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.EMAIL_FROM || ''
+  }),
   allowedOrigins: Object.freeze([...allowedOrigins]),
   backendUrl: process.env.BACKEND_URL || 'http://localhost:5000',
   razorpay: Object.freeze({

@@ -2,21 +2,28 @@ const Member = require('../models/Member');
 const Attendance = require('../models/Attendance');
 const MemberMembership = require('../models/MemberMembership');
 const Payment = require('../models/Payment');
+const Business = require('../models/Business');
 const { getDashboardPeriods } = require('../utils/dashboardPeriods');
-
-const dashboardTimeZone = process.env.DASHBOARD_TIME_ZONE || 'Asia/Kolkata';
-
-try {
-  new Intl.DateTimeFormat('en-US', { timeZone: dashboardTimeZone });
-} catch (error) {
-  throw new Error(`Invalid DASHBOARD_TIME_ZONE: ${dashboardTimeZone}`, {
-    cause: error
-  });
-}
+const {
+  isValidTimeZone,
+  DEFAULT_TIME_ZONE
+} = require('../utils/membershipExpiry');
 
 exports.getDashboardStats = async (req, res) => {
   try {
     const tenantId = req.tenantId;
+    const business = await Business.findOne({ _id: tenantId })
+      .select('timeZone')
+      .lean();
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found'
+      });
+    }
+    const dashboardTimeZone = isValidTimeZone(business.timeZone)
+      ? business.timeZone
+      : DEFAULT_TIME_ZONE;
     const now = new Date();
     const periods = getDashboardPeriods(now, dashboardTimeZone);
     const [

@@ -27,6 +27,10 @@ const ownerSchema = new mongoose.Schema(
       required: true,
       select: false
     },
+    passwordChangedAt: {
+      type: Date,
+      default: null
+    },
 
     businessId: {
       type: mongoose.Schema.Types.ObjectId,

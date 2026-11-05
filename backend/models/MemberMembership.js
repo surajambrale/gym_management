@@ -95,6 +95,13 @@ memberMembershipSchema.index({
   memberId: 1,
   createdAt: -1
 });
+memberMembershipSchema.index({
+  tenantId: 1,
+  businessId: 1,
+  memberId: 1,
+  startDate: -1,
+  createdAt: -1
+});
 memberMembershipSchema.index({ tenantId: 1, status: 1 });
 memberMembershipSchema.index(
   { businessId: 1, invoiceNumber: 1 },

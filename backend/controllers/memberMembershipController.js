@@ -6,20 +6,12 @@ const Business = require('../models/Business');
 const Payment = require('../models/Payment');
 const { toMinorUnits, fromMinorUnits } = require('../utils/currency');
 const { calculateGst } = require('../utils/gst');
-
-const addDuration = (date, duration, durationType) => {
-  const result = new Date(date);
-
-  if (durationType === 'Days') {
-    result.setDate(result.getDate() + duration);
-  } else if (durationType === 'Months') {
-    result.setMonth(result.getMonth() + duration);
-  } else if (durationType === 'Years') {
-    result.setFullYear(result.getFullYear() + duration);
-  }
-
-  return result;
-};
+const {
+  addMembershipDuration,
+  isValidTimeZone,
+  parseMembershipStartDate,
+  DEFAULT_TIME_ZONE
+} = require('../utils/membershipExpiry');
 
 // Assign membership to a member
 const assignMembership = async (req, res) => {
@@ -144,19 +136,23 @@ const assignMembership = async (req, res) => {
       };
     }
 
-    const membershipStartDate = new Date(startDate);
+    const timeZone = isValidTimeZone(business.timeZone)
+      ? business.timeZone
+      : DEFAULT_TIME_ZONE;
+    const membershipStartDate = parseMembershipStartDate(startDate, timeZone);
 
-    if (Number.isNaN(membershipStartDate.getTime())) {
+    if (!membershipStartDate) {
       return res.status(400).json({
         success: false,
         message: 'Invalid start date'
       });
     }
 
-    const endDate = addDuration(
+    const endDate = addMembershipDuration(
       membershipStartDate,
       plan.duration,
-      plan.durationType
+      plan.durationType,
+      timeZone
     );
 
     const membership = await MemberMembership.create({

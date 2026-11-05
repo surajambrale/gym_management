@@ -4,10 +4,12 @@ const {
   isValidStateCode,
   GST_STATES
 } = require('../utils/gst');
+const { isValidTimeZone } = require('../utils/membershipExpiry');
 
 const businessFields = [
   'businessName',
   'businessType',
+  'timeZone',
   'phone',
   'email',
   'address',
@@ -23,7 +25,7 @@ const businessFields = [
 ];
 const businessTypes = ['Gym', 'Yoga Studio', 'Fitness Studio', 'Other'];
 const settingsProjection =
-  'businessName businessType ownerName phone email address logoUrl subscriptionStatus gstEnabled gstinNumber legalBusinessName registeredBusinessAddress state stateCode gstPercentage taxInclusive';
+  'businessName businessType timeZone ownerName phone email address logoUrl subscriptionStatus gstEnabled gstinNumber legalBusinessName registeredBusinessAddress state stateCode gstPercentage taxInclusive';
 
 const validateGstSettings = (settings) => {
   if (typeof settings.gstEnabled !== 'boolean') {
@@ -66,7 +68,9 @@ exports.getSettings = async (req, res) => {
     if (!business) {
       return res.status(404).json({ success: false, message: 'Business not found' });
     }
-    return res.json({ success: true, business });
+    const result = business.toObject();
+    result.timeZone = result.timeZone || process.env.DASHBOARD_TIME_ZONE || 'Asia/Kolkata';
+    return res.json({ success: true, business: result });
   } catch (error) {
     console.error('Get business settings error:', error);
     return res.status(500).json({
@@ -98,6 +102,15 @@ exports.updateSettings = async (req, res) => {
       success: false,
       message: 'Invalid business type'
     });
+  }
+  if (updates.timeZone !== undefined) {
+    updates.timeZone = String(updates.timeZone).trim();
+    if (!isValidTimeZone(updates.timeZone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Enter a valid IANA time zone, such as Asia/Kolkata'
+      });
+    }
   }
   if (updates.phone !== undefined) updates.phone = String(updates.phone).trim();
   if (updates.email !== undefined) updates.email = String(updates.email).trim().toLowerCase();

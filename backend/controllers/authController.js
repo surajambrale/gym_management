@@ -6,6 +6,17 @@ const Owner = require('../models/Owner');
 const Business = require('../models/Business');
 const config = require('../config/env');
 const {
+  changeOwnerPassword,
+  validatePasswordChangeInput,
+  validateNewPassword
+} = require('../services/passwordChange');
+const {
+  GENERIC_FORGOT_PASSWORD_MESSAGE,
+  requestPasswordReset,
+  findValidPasswordReset,
+  resetOwnerPassword
+} = require('../services/passwordReset');
+const {
   SESSION_COOKIE_NAME,
   SESSION_IDLE_TIMEOUT_MS,
   SESSION_MAX_AGE_MS,
@@ -521,5 +532,149 @@ exports.revokeAllOwnerSessions = async (req, res) => {
     console.error('Revoke all sessions error:', error.message);
     clearSessionCookie(res);
     return res.status(500).json({ success: false, message: 'Unable to revoke sessions' });
+  }
+};
+
+exports.changeOwnerPassword = async (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body || {};
+  const validationError = validatePasswordChangeInput({
+    currentPassword,
+    newPassword,
+    confirmPassword
+  });
+  if (validationError) return res.status(400).json({ success: false, message: validationError });
+
+  try {
+    const result = await changeOwnerPassword({
+      ownerId: req.owner._id,
+      tenantId: req.tenantId,
+      currentPassword,
+      newPassword
+    });
+
+    if (result.error === 'CURRENT_PASSWORD_INVALID') {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect.'
+      });
+    }
+    if (result.error === 'PASSWORD_UNCHANGED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Choose a new password that differs from your current password.'
+      });
+    }
+    if (result.error === 'OWNER_UNAVAILABLE') {
+      return res.status(401).json({
+        success: false,
+        message: 'The authenticated owner account is unavailable.'
+      });
+    }
+
+    clearSessionCookie(res);
+    return res.status(200).json({
+      success: true,
+      message: 'Password changed successfully. Please sign in again with your new password.'
+    });
+  } catch (error) {
+    console.error('Change owner password failed:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to change password. No changes were applied.'
+    });
+  }
+};
+
+const isValidEmail = email =>
+  typeof email === 'string' &&
+  email.length <= 254 &&
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+exports.forgotPassword = async (req, res) => {
+  const email = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+  if (!isValidEmail(email)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Enter a valid email address.'
+    });
+  }
+
+  try {
+    await requestPasswordReset({ email });
+    return res.status(200).json({
+      success: true,
+      message: GENERIC_FORGOT_PASSWORD_MESSAGE
+    });
+  } catch (error) {
+    console.error('Password reset request failed:', error.code || 'INTERNAL_ERROR');
+    const configurationError = [
+      'SMTP_NOT_CONFIGURED',
+      'RESET_URL_MUST_USE_HTTPS',
+      'RESET_URL_INVALID'
+    ].includes(error.code);
+    return res.status(configurationError ? 503 : 502).json({
+      success: false,
+      message: configurationError
+        ? 'Password reset is not configured securely. Please contact support.'
+        : 'We could not send the reset email. Please try again later.'
+    });
+  }
+};
+
+exports.validatePasswordResetToken = async (req, res) => {
+  try {
+    const reset = await findValidPasswordReset({ token: req.body?.token });
+    return res.status(200).json({ success: true, valid: Boolean(reset) });
+  } catch (error) {
+    console.error('Password reset token validation failed:', error.code || error.name);
+    return res.status(503).json({
+      success: false,
+      message: 'Unable to verify this reset link right now.'
+    });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  const { token, newPassword, confirmPassword } = req.body || {};
+  const passwordError = validateNewPassword(newPassword);
+  if (passwordError) {
+    return res.status(400).json({ success: false, message: passwordError });
+  }
+  if (typeof confirmPassword !== 'string' || newPassword !== confirmPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password and confirmation do not match.'
+    });
+  }
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/i.test(token)) {
+    return res.status(400).json({
+      success: false,
+      message: 'This reset link is invalid or expired. Request a new link.'
+    });
+  }
+
+  try {
+    const result = await resetOwnerPassword({ token, newPassword });
+    if (result.error === 'RESET_TOKEN_INVALID') {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset link is invalid, expired, or already used. Request a new link.'
+      });
+    }
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. Sign in with your new password.'
+    });
+  } catch (error) {
+    console.error('Password reset failed:', error.code || error.name);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to reset your password. Request a new reset link and try again.'
+    });
   }
 };

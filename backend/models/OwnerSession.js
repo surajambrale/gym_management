@@ -59,7 +59,7 @@ const ownerSessionSchema = new mongoose.Schema({
   },
   revokedReason: {
     type: String,
-    enum: ['logout', 'revoked', 'expired', null],
+    enum: ['logout', 'revoked', 'expired', 'password_changed', null],
     default: null
   }
 }, { timestamps: true });
