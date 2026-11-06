@@ -1,5 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  OnDestroy,
+  OnInit,
+  Output
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
 import { DashboardService } from '../../services/dashboard';
@@ -74,7 +81,8 @@ export class MembershipExpiry implements OnInit, OnDestroy {
 
   constructor(
     private readonly dashboard: DashboardService,
-    private readonly membershipPlans: MembershipPlanService
+    private readonly membershipPlans: MembershipPlanService,
+    private readonly changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -111,7 +119,10 @@ export class MembershipExpiry implements OnInit, OnDestroy {
       : { status: 'upcoming', page: 1, limit: 5, sort: 'asc' as const };
 
     this.expiryRequest = this.dashboard.getMembershipExpiry(filters)
-      .pipe(finalize(() => this.loading = false))
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           this.expiringNext7DaysCount = Number(response.expiringNext7DaysCount || 0);
@@ -236,7 +247,10 @@ export class MembershipExpiry implements OnInit, OnDestroy {
     this.plansLoading = true;
     this.plansRequest?.unsubscribe();
     this.plansRequest = this.membershipPlans.getPlans()
-      .pipe(finalize(() => this.plansLoading = false))
+      .pipe(finalize(() => {
+        this.plansLoading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           const allPlans = response.plans || response.membershipPlans || [];
@@ -278,7 +292,10 @@ export class MembershipExpiry implements OnInit, OnDestroy {
       planId: this.selectedPlanId,
       startDate: this.renewalStartDate,
       paidAmount: 0
-    }).pipe(finalize(() => this.renewalLoading = false))
+    }).pipe(finalize(() => {
+      this.renewalLoading = false;
+      this.changeDetector.markForCheck();
+    }))
       .subscribe({
         next: response => {
           this.showRenewal = false;

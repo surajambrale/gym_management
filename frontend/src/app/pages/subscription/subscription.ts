@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { finalize } from 'rxjs';
 import { ManagementService } from '../../services/management';
 
@@ -15,12 +15,18 @@ export class SubscriptionPage implements OnInit {
   errorMessage = '';
   status = '';
 
-  constructor(private readonly management: ManagementService) {}
+  constructor(
+    private readonly management: ManagementService,
+    private readonly changeDetector: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loading = true;
     this.management.getSubscription()
-      .pipe(finalize(() => this.loading = false))
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => this.status = response.subscription?.status || 'Unknown',
         error: error => {

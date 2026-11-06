@@ -16,6 +16,7 @@ import { Reports } from './pages/reports/reports';
 import { BusinessSettings } from './pages/settings/settings';
 import { SubscriptionPage } from './pages/subscription/subscription';
 import { ExpiringMember, MembershipExpiry } from './pages/membership-expiry/membership-expiry';
+import { ExpenseTracker } from './pages/expenses/expense-tracker';
 import { SessionActivityService } from './services/session-activity';
 
 import { environment } from '../environments/environment';
@@ -34,7 +35,8 @@ import { environment } from '../environments/environment';
     Reports,
     BusinessSettings,
     SubscriptionPage,
-    MembershipExpiry
+    MembershipExpiry,
+    ExpenseTracker
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
@@ -106,6 +108,7 @@ export class App implements OnInit, OnDestroy {
     {
       title: 'MANAGEMENT',
       items: [
+        { name: 'Expense Tracker', icon: '₹' },
         { name: 'Trainers & Staff', icon: '♟' },
         { name: 'Reports & Analytics', icon: '▥' }
       ]

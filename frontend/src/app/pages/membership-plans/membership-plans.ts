@@ -1,6 +1,14 @@
-import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 import { MembershipPlanService } from '../../services/membership-plan';
 
 @Component({
@@ -30,7 +38,10 @@ export class MembershipPlans implements OnInit, OnChanges {
 
   planForm: any = this.getEmptyForm();
 
-  constructor(private planService: MembershipPlanService) {}
+  constructor(
+    private planService: MembershipPlanService,
+    private changeDetector: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadPlans();
@@ -66,17 +77,20 @@ export class MembershipPlans implements OnInit, OnChanges {
 
     this.loading = true;
 
-    this.planService.getPlans().subscribe({
+    this.planService.getPlans()
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response) => {
         this.plans = response.plans || [];
         this.filterPlans();
         this.lastLoadedAt = Date.now();
-        this.loading = false;
       },
       error: (error) => {
         console.error('Plans loading error:', error);
         alert(error.error?.message || 'Unable to load plans');
-        this.loading = false;
       }
     });
   }
@@ -154,15 +168,16 @@ export class MembershipPlans implements OnInit, OnChanges {
       : this.planService.addPlan(this.planForm);
 
     this.saving = true;
-    request.subscribe({
+    request.pipe(finalize(() => {
+      this.saving = false;
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: (response) => {
-        this.saving = false;
         alert(response.message);
         this.closeForm();
         this.loadPlans();
       },
       error: (error) => {
-        this.saving = false;
         alert(error.error?.message || 'Unable to save membership plan');
       }
     });
@@ -180,14 +195,17 @@ export class MembershipPlans implements OnInit, OnChanges {
     if (!confirmed) return;
 
     this.deletingPlanId = plan._id;
-    this.planService.deletePlan(plan._id).subscribe({
-      next: (response) => {
+    this.planService.deletePlan(plan._id)
+      .pipe(finalize(() => {
         this.deletingPlanId = '';
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
+      next: (response) => {
         alert(response.message);
         this.loadPlans();
       },
       error: (error) => {
-        this.deletingPlanId = '';
         alert(error.error?.message || 'Unable to delete plan');
       }
     });

@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { Payments } from './payments';
 import { PaymentService } from '../../services/payment';
@@ -11,8 +11,12 @@ describe('Payments', () => {
   let component: Payments;
   let fixture: ComponentFixture<Payments>;
   let memberService: { getAllMatchingMembers: ReturnType<typeof vi.fn> };
+  let membershipPlanService: { getMemberMemberships: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
+    membershipPlanService = {
+      getMemberMemberships: vi.fn()
+    };
     memberService = {
       getAllMatchingMembers: vi.fn().mockReturnValue(of(
         Array.from({ length: 101 }, (_, index) => ({
@@ -42,7 +46,7 @@ describe('Payments', () => {
           }
         },
         { provide: MemberService, useValue: memberService },
-        { provide: MembershipPlanService, useValue: { getMemberMemberships: vi.fn() } },
+        { provide: MembershipPlanService, useValue: membershipPlanService },
         { provide: DashboardService, useValue: {} }
       ]
     }).compileComponents();
@@ -61,5 +65,49 @@ describe('Payments', () => {
   it('loads all active members through the paginated member service', () => {
     expect(memberService.getAllMatchingMembers).toHaveBeenCalledWith('', 'Active');
     expect(component.members).toHaveLength(101);
+  });
+
+  it('cancels the previous membership lookup when the selected member changes', () => {
+    const staleResponse = new Subject<any>();
+    membershipPlanService.getMemberMemberships
+      .mockReturnValueOnce(staleResponse)
+      .mockReturnValueOnce(of({
+        memberships: [{
+          _id: 'membership-current',
+          planPrice: 100,
+          paidAmount: 0,
+          status: 'Active'
+        }]
+      }));
+
+    component.selectedMemberId = 'member-old';
+    component.onMemberChange();
+    component.selectedMemberId = 'member-current';
+    component.onMemberChange();
+    staleResponse.next({
+      memberships: [{
+        _id: 'membership-stale',
+        planPrice: 100,
+        paidAmount: 0,
+        status: 'Active'
+      }]
+    });
+
+    expect(component.memberships.map(item => item._id)).toEqual([
+      'membership-current'
+    ]);
+    expect(component.membershipsLoading).toBe(false);
+  });
+
+  it('stops membership loading and displays API errors', () => {
+    membershipPlanService.getMemberMemberships.mockReturnValue(
+      throwError(() => ({ error: { message: 'Membership request failed' } }))
+    );
+
+    component.selectedMemberId = 'member-123';
+    component.onMemberChange();
+
+    expect(component.membershipsLoading).toBe(false);
+    expect(component.errorMessage).toBe('Membership request failed');
   });
 });

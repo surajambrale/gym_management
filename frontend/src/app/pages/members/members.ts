@@ -97,6 +97,8 @@ export class Members implements OnInit, OnChanges, OnDestroy {
   showForm = false;
   isEditMode = false;
   selectedMemberId = '';
+  private createdMemberId = '';
+  private memberCreatedWithoutId = false;
 
   memberForm: any = this.getEmptyForm();
 
@@ -200,6 +202,7 @@ totalDueAmount = 0;
         this.members = [];
         this.totalMembers = 0;
         this.totalPages = 0;
+        this.changeDetector.markForCheck();
         return;
       }
 
@@ -207,6 +210,7 @@ totalDueAmount = 0;
         console.error('Members loading error:', result.error);
         this.errorMessage =
           result.error.error?.message || 'Unable to load members';
+        this.changeDetector.markForCheck();
         return;
       }
 
@@ -221,6 +225,7 @@ totalDueAmount = 0;
       this.totalPages = response.pagination?.totalPages || 0;
       this.dataLoaded = true;
       this.lastLoadedAt = Date.now();
+      this.changeDetector.markForCheck();
     });
     this.loadMembers();
     this.loadPlans();
@@ -295,19 +300,22 @@ totalDueAmount = 0;
     }
 
     this.plansLoading = true;
-    this.planService.getPlans().subscribe({
+    this.planService.getPlans()
+      .pipe(finalize(() => {
+        this.plansLoading = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response) => {
         const allPlans = response.plans || response.membershipPlans || [];
         this.plans = allPlans.filter(
           (plan: any) => plan.status === 'Active'
         );
         this.plansLoadedAt = Date.now();
-        this.plansLoading = false;
       },
       error: (error) => {
         console.error('Plans loading error:', error);
         this.plans = [];
-        this.plansLoading = false;
       }
     });
   }
@@ -828,6 +836,8 @@ totalDueAmount = 0;
   openAddForm(): void {
     this.isEditMode = false;
     this.selectedMemberId = '';
+    this.createdMemberId = '';
+    this.memberCreatedWithoutId = false;
     this.memberForm = this.getEmptyForm();
     this.showForm = true;
     this.loadPlans();
@@ -837,6 +847,8 @@ totalDueAmount = 0;
   openEditForm(member: any): void {
     this.isEditMode = true;
     this.selectedMemberId = member._id;
+    this.createdMemberId = '';
+    this.memberCreatedWithoutId = false;
 
     this.memberForm = {
       fullName: member.fullName,
@@ -866,10 +878,13 @@ totalDueAmount = 0;
 
   closeForm(): void {
     this.showForm = false;
+    this.createdMemberId = '';
+    this.memberCreatedWithoutId = false;
   }
 
   // Save member and optionally assign membership
   saveMember(): void {
+    if (this.memberCreatedWithoutId) return;
     if (
       !this.memberForm.fullName.trim() ||
       !this.memberForm.phone.trim()
@@ -892,78 +907,91 @@ totalDueAmount = 0;
     this.errorMessage = '';
     this.successMessage = '';
 
-    const request = this.isEditMode
-      ? this.memberService.updateMember(
-          this.selectedMemberId,
-          this.memberForm
+    const isEditMode = this.isEditMode;
+    const planId = this.memberForm.planId;
+    const createdMemberId = this.createdMemberId;
+    const membershipRequest = (memberId: string) =>
+      this.planService.assignMembership({
+        memberId,
+        planId,
+        startDate: this.memberForm.membershipStartDate,
+        paidAmount: 0
+      });
+
+    const request = createdMemberId
+      ? membershipRequest(createdMemberId).pipe(
+          map(response => ({ response, memberId: createdMemberId, assigned: true }))
         )
-      : this.memberService.addMember(this.memberForm);
+      : (isEditMode
+          ? this.memberService.updateMember(this.selectedMemberId, this.memberForm)
+          : this.memberService.addMember(this.memberForm)
+        ).pipe(
+          switchMap(response => {
+            const memberId = isEditMode
+              ? this.selectedMemberId
+              : response.member?._id || response.data?._id;
 
-    request.subscribe({
-      next: (response) => {
-        const memberId = this.isEditMode
-          ? this.selectedMemberId
-          : response.member?._id || response.data?._id;
+            if (!isEditMode && planId && !memberId) {
+              this.memberCreatedWithoutId = true;
+              return of({ response, memberId: '', assigned: false });
+            }
 
-        if (
-          !this.isEditMode &&
-          this.memberForm.planId &&
-          memberId
-        ) {
-          this.assignMembership(memberId);
-          return;
-        }
+            if (!isEditMode && planId && memberId) {
+              this.createdMemberId = memberId;
+              return membershipRequest(memberId).pipe(
+                map(assignment => ({
+                  response: assignment,
+                  memberId,
+                  assigned: true
+                }))
+              );
+            }
 
-        if (!this.isEditMode && this.memberForm.planId && !memberId) {
-          this.saving = false;
+            return of({ response, memberId, assigned: false });
+          })
+        );
+
+    request.pipe(
+      finalize(() => {
+        this.saving = false;
+        this.changeDetector.markForCheck();
+      })
+    ).subscribe({
+      next: result => {
+        if (this.memberCreatedWithoutId) {
           this.errorMessage =
-            'Member was created, but member ID was not returned. Please assign membership from the member record.';
-          this.closeForm();
+            'The member was created, but the server did not return its ID. Do not resubmit; refresh the member list and assign a membership from that record.';
+          this.currentPage = 1;
           this.loadMembers();
+          this.dashboardService.requestRefresh();
           return;
         }
 
-        this.saving = false;
-        this.successMessage = response.message || 'Member saved successfully';
-        this.closeForm();
-        if (!this.isEditMode) this.currentPage = 1;
-        this.loadMembers();
-      },
-      error: (error) => {
-        this.saving = false;
-        this.errorMessage = error.error?.message || 'Unable to save member';
-      }
-    });
-  }
+        if (result.assigned && result.memberId) {
+          this.historyCache.delete(result.memberId);
+          this.financialCache.delete(result.memberId);
+          this.dashboardService.requestRefresh();
+        }
 
-  // Assign membership after member creation
-  assignMembership(memberId: string): void {
-    const membershipData = {
-      memberId,
-      planId: this.memberForm.planId,
-      startDate: this.memberForm.membershipStartDate,
-      paidAmount: 0
-    };
-
-    this.planService.assignMembership(membershipData).subscribe({
-      next: () => {
-        this.saving = false;
-        this.historyCache.delete(memberId);
-        this.financialCache.delete(memberId);
-        this.successMessage =
-          'Member and membership saved successfully. Collect payment from Payments & Fees.';
+        this.successMessage = result.assigned
+          ? 'Member and membership saved successfully. Collect payment from Payments & Fees.'
+          : result.response.message || 'Member saved successfully';
+        this.createdMemberId = '';
         this.closeForm();
-        this.currentPage = 1;
+        if (!isEditMode) this.currentPage = 1;
         this.loadMembers();
         this.dashboardService.requestRefresh();
       },
-      error: (error) => {
-        this.saving = false;
-        this.errorMessage =
-          'Member created, but membership assignment failed: ' +
-          (error.error?.message || 'Please try assigning membership again.');
-        this.closeForm();
-        this.loadMembers();
+      error: error => {
+        const message = this.createdMemberId
+          ? 'Member created, but membership assignment failed: ' +
+            (error.error?.message || 'Review the details and retry the membership assignment.')
+          : error.error?.message || 'Unable to save member';
+        if (this.createdMemberId) {
+          this.currentPage = 1;
+          this.loadMembers();
+        }
+        this.errorMessage = message;
       }
     });
   }
@@ -980,22 +1008,24 @@ totalDueAmount = 0;
     this.deletingMemberId = member._id;
     this.errorMessage = '';
     this.successMessage = '';
-    this.memberService.deleteMember(member._id).subscribe({
+    this.memberService.deleteMember(member._id)
+      .pipe(finalize(() => {
+        this.deletingMemberId = '';
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response) => {
         this.members = this.members.filter(item => item._id !== member._id);
         this.selectedMemberRecords.delete(member._id);
         this.totalMembers = Math.max(0, this.totalMembers - 1);
         this.totalPages = Math.ceil(this.totalMembers / this.limit);
         this.successMessage = response.message || 'Member deleted successfully.';
-        this.deletingMemberId = '';
-
         if (this.members.length === 0 && this.currentPage > 1) {
           this.currentPage--;
           this.loadMembers();
         }
       },
       error: (error) => {
-        this.deletingMemberId = '';
         this.errorMessage = error.error?.message || 'Unable to delete member';
       }
     });

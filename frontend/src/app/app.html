@@ -453,6 +453,18 @@
       }
     </div>
 
+    <div [hidden]="selectedMenu !== 'Expense Tracker'">
+      @defer (when selectedMenu === 'Expense Tracker') {
+        <app-expense-tracker></app-expense-tracker>
+      } @placeholder {
+        <section class="module-loading-skeleton" aria-label="Expenses loading">
+          <div class="skeleton-line skeleton-title"></div><div class="skeleton-card"></div>
+        </section>
+      } @error {
+        <p class="module-load-error">Unable to load Expense Tracker.</p>
+      }
+    </div>
+
     <div [hidden]="selectedMenu !== 'Reports & Analytics'">
       @defer (when selectedMenu === 'Reports & Analytics') {
         <app-reports></app-reports>

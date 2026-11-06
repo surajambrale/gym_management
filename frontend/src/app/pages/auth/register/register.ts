@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   FormBuilder,
@@ -8,6 +8,7 @@ import {
 } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../services/auth';
+import { finalize } from 'rxjs';
 
 @Component({
   selector: 'app-register',
@@ -32,7 +33,8 @@ export class Register {
   constructor(
     private fb: FormBuilder,
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private changeDetector: ChangeDetectorRef
   ) {
     this.registerForm = this.fb.group({
       name: ['', Validators.required],
@@ -52,6 +54,7 @@ export class Register {
   }
 
   onSubmit(): void {
+    if (this.loading) return;
     this.errorMessage = '';
 
     if (this.registerForm.invalid) {
@@ -61,10 +64,13 @@ export class Register {
 
     this.loading = true;
 
-    this.authService.register(this.registerForm.value).subscribe({
-      next: (response) => {
+    this.authService.register(this.registerForm.value)
+      .pipe(finalize(() => {
         this.loading = false;
-
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
+      next: (response) => {
         if (response.success && response.session?.id) {
           this.router.navigate(['/dashboard']);
         } else {
@@ -72,7 +78,6 @@ export class Register {
         }
       },
       error: (error) => {
-        this.loading = false;
         this.errorMessage =
           error.error?.message || 'Something went wrong. Please try again.';
       }

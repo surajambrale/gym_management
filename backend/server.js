@@ -60,6 +60,7 @@ app.use(
 app.use('/api/trainers-staff', require('./routes/trainerStaffRoutes'));
 app.use('/api/business', require('./routes/businessRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/expenses', require('./routes/expenseRoutes'));
 
 // Root Route
 app.get('/', (req, res) => {

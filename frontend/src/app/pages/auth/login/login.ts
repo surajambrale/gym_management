@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   FormBuilder,
@@ -8,6 +8,7 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../../services/auth';
+import { finalize } from 'rxjs';
 
 @Component({
   selector: 'app-login',
@@ -27,7 +28,8 @@ export class Login {
     private fb: FormBuilder,
     private authService: AuthService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private changeDetector: ChangeDetectorRef
   ) {
     const reason = this.route.snapshot.queryParamMap.get('reason');
     if (reason === 'inactive') {
@@ -49,6 +51,7 @@ export class Login {
   }
 
   onSubmit(): void {
+    if (this.loading) return;
 
     this.errorMessage = '';
     this.successMessage = '';
@@ -60,12 +63,14 @@ export class Login {
 
     this.loading = true;
 
-    this.authService.login(this.loginForm.value).subscribe({
+    this.authService.login(this.loginForm.value)
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
 
       next: (response) => {
-
-        this.loading = false;
-
         if (response.success && response.session?.id) {
           this.successMessage = 'Login successful!';
           this.router.navigate(['/dashboard']);
@@ -76,9 +81,6 @@ export class Login {
       },
 
       error: (error) => {
-
-        this.loading = false;
-
         this.errorMessage =
           error.error?.message || 'Invalid email or password.';
 

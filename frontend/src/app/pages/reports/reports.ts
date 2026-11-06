@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
 import { jsPDF } from 'jspdf';
@@ -96,7 +96,8 @@ export class Reports implements OnInit, OnDestroy {
 
   constructor(
     private readonly management: ManagementService,
-    private readonly membershipPlans: MembershipPlanService
+    private readonly membershipPlans: MembershipPlanService,
+    private readonly changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -190,7 +191,10 @@ export class Reports implements OnInit, OnDestroy {
     this.management.getReport(this.period === 'custom'
       ? { period: 'custom', from: this.from, to: this.to, timezone: this.timezone }
       : { period: this.period, from: this.from, to: this.to, timezone: this.timezone })
-      .pipe(finalize(() => this.loading = false))
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           this.report = response;
@@ -224,7 +228,10 @@ export class Reports implements OnInit, OnDestroy {
       detailsOnly: true,
       page: this.detailPage,
       limit: this.pageSize
-    }).pipe(finalize(() => this.detailLoading = false)).subscribe({
+    }).pipe(finalize(() => {
+      this.detailLoading = false;
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: response => this.acceptDetails(response),
       error: error => {
         console.error('Detailed report loading error:', error);
@@ -255,7 +262,10 @@ export class Reports implements OnInit, OnDestroy {
       detailsOnly: true,
       page,
       limit: this.pageSize
-    }).pipe(finalize(() => this.detailLoading = false)).subscribe({
+    }).pipe(finalize(() => {
+      this.detailLoading = false;
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: response => this.acceptDetails(response),
       error: error => {
         console.error('Report page loading error:', error);
@@ -315,16 +325,21 @@ export class Reports implements OnInit, OnDestroy {
                 console.error('PDF report generation error:', error);
                 this.detailError = 'Unable to generate the PDF report.';
               })
-              .finally(() => this.exporting = false);
+              .finally(() => {
+                this.exporting = false;
+                this.changeDetector.markForCheck();
+              });
             return;
           }
           else this.printReport(records);
           this.exporting = false;
+          this.changeDetector.markForCheck();
         },
         error: error => {
           this.exporting = false;
           console.error('Report export data loading error:', error);
           this.detailError = error.error?.message || 'Unable to load all records for export.';
+          this.changeDetector.markForCheck();
         }
       });
   }
@@ -737,20 +752,28 @@ export class Reports implements OnInit, OnDestroy {
 
   private loadPlans(): void {
     this.membershipPlans.getPlans().subscribe({
-      next: response => this.plans = response.plans || [],
+      next: response => {
+        this.plans = response.plans || [];
+        this.changeDetector.markForCheck();
+      },
       error: error => {
         console.error('Report plan filter loading error:', error);
         this.detailError = 'Unable to load membership plan filters.';
+        this.changeDetector.markForCheck();
       }
     });
   }
 
   private loadTrainers(): void {
     this.management.getStaff({ role: 'Trainer', status: 'Active', limit: 100 }).subscribe({
-      next: response => this.trainers = response.staff || [],
+      next: response => {
+        this.trainers = response.staff || [];
+        this.changeDetector.markForCheck();
+      },
       error: error => {
         console.error('Report trainer filter loading error:', error);
         this.detailError = 'Unable to load trainer filters.';
+        this.changeDetector.markForCheck();
       }
     });
   }

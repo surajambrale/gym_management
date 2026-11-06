@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
 import { jsPDF } from 'jspdf';
@@ -115,7 +115,8 @@ export class TrainersStaff implements OnInit, OnDestroy {
 
   constructor(
     private readonly management: ManagementService,
-    private readonly members: MemberService
+    private readonly members: MemberService,
+    private readonly changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -164,6 +165,7 @@ export class TrainersStaff implements OnInit, OnDestroy {
       .pipe(finalize(() => {
         this.pendingDirectoryRequests = Math.max(0, this.pendingDirectoryRequests - 1);
         this.loading = this.pendingDirectoryRequests > 0;
+        this.changeDetector.markForCheck();
       }))
       .subscribe({
         next: response => {
@@ -302,7 +304,10 @@ export class TrainersStaff implements OnInit, OnDestroy {
     const request = editingId
       ? this.management.updateStaff(editingId, record)
       : this.management.createStaff(record);
-    request.pipe(finalize(() => this.savingRole = '')).subscribe({
+    request.pipe(finalize(() => {
+      this.savingRole = '';
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: () => {
         this.successMessage = editingId ? `${role} updated.` : `${role} added.`;
         this.cancelEdit(role);
@@ -325,7 +330,9 @@ export class TrainersStaff implements OnInit, OnDestroy {
   setStatus(record: TeamRecord, status: 'Active' | 'Inactive'): void {
     if (status === 'Inactive' && !confirm(`Deactivate ${record.name}?`)) return;
     this.errorMessage = '';
-    this.management.updateStaff(record._id, { status }).subscribe({
+    this.management.updateStaff(record._id, { status })
+      .pipe(finalize(() => this.changeDetector.markForCheck()))
+      .subscribe({
       next: () => {
         this.successMessage = `${record.role} ${status === 'Inactive' ? 'deactivated' : 'activated'}.`;
         this.selectedRecord = null;
@@ -344,7 +351,10 @@ export class TrainersStaff implements OnInit, OnDestroy {
     this.assignmentLoading = true;
     this.errorMessage = '';
     this.management.getTrainerAssignments(trainer._id)
-      .pipe(finalize(() => this.assignmentLoading = false))
+      .pipe(finalize(() => {
+        this.assignmentLoading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => this.assignedMembers = response.members || [],
         error: error => {
@@ -353,7 +363,9 @@ export class TrainersStaff implements OnInit, OnDestroy {
           this.assignmentTrainer = null;
         }
       });
-    this.members.getAllMatchingMembers('', 'Active').subscribe({
+    this.members.getAllMatchingMembers('', 'Active')
+      .pipe(finalize(() => this.changeDetector.markForCheck()))
+      .subscribe({
       next: members => this.availableMembers = members.map(member => ({
         _id: member._id,
         fullName: member.fullName,
@@ -370,7 +382,10 @@ export class TrainersStaff implements OnInit, OnDestroy {
     if (!this.assignmentTrainer || !this.selectedMemberId || this.assigning) return;
     this.assigning = true;
     this.management.assignMemberToTrainer(this.assignmentTrainer._id, this.selectedMemberId)
-      .pipe(finalize(() => this.assigning = false))
+      .pipe(finalize(() => {
+        this.assigning = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: () => {
           this.selectedMemberId = '';
@@ -388,7 +403,9 @@ export class TrainersStaff implements OnInit, OnDestroy {
 
   removeAssignment(member: { _id: string; fullName: string }): void {
     if (!this.assignmentTrainer) return;
-    this.management.removeTrainerAssignment(this.assignmentTrainer._id, member._id).subscribe({
+    this.management.removeTrainerAssignment(this.assignmentTrainer._id, member._id)
+      .pipe(finalize(() => this.changeDetector.markForCheck()))
+      .subscribe({
       next: () => {
         this.assignedMembers = this.assignedMembers.filter(item => item._id !== member._id);
         this.successMessage = `${member.fullName} removed from trainer.`;
@@ -437,7 +454,10 @@ export class TrainersStaff implements OnInit, OnDestroy {
       status: this.reportStatus,
       from: this.reportFrom,
       to: this.reportTo
-    }).pipe(finalize(() => this.reportLoading = false)).subscribe({
+    }).pipe(finalize(() => {
+      this.reportLoading = false;
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: response => {
         this.reportRecords = response.records || [];
         this.staffByDesignation = response.staffByDesignation || [];

@@ -13,10 +13,13 @@ describe('Members', () => {
   let fixture: ComponentFixture<Members>;
   let memberService: {
     getMembers: ReturnType<typeof vi.fn>;
+    addMember: ReturnType<typeof vi.fn>;
+    updateMember: ReturnType<typeof vi.fn>;
     generateMemberQR: ReturnType<typeof vi.fn>;
   };
   let planService: {
     getPlans: ReturnType<typeof vi.fn>;
+    assignMembership: ReturnType<typeof vi.fn>;
     getMemberMemberships: ReturnType<typeof vi.fn>;
   };
   let paymentService: {
@@ -35,10 +38,13 @@ describe('Members', () => {
         members: [],
         pagination: { totalMembers: 0, totalPages: 0 }
       })),
+      addMember: vi.fn(),
+      updateMember: vi.fn(),
       generateMemberQR: vi.fn()
     };
     planService = {
       getPlans: vi.fn().mockReturnValue(of({ plans: [] })),
+      assignMembership: vi.fn(),
       getMemberMemberships: vi.fn()
     };
     paymentService = {
@@ -186,6 +192,54 @@ describe('Members', () => {
 
     expect(component.financialLoading).toBe(false);
     expect(component.financialError).toBe('Payments request failed');
+  });
+
+  it('closes the member form and refreshes summaries after a successful save', () => {
+    memberService.addMember.mockReturnValue(of({
+      success: true,
+      message: 'Member added'
+    }));
+    component.openAddForm();
+    component.memberForm.fullName = 'New Member';
+    component.memberForm.phone = '1234567890';
+
+    component.saveMember();
+
+    expect(component.saving).toBe(false);
+    expect(component.showForm).toBe(false);
+    expect(component.successMessage).toBe('Member added');
+    expect(memberService.addMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the form open after membership assignment failure and retries without recreating the member', () => {
+    memberService.addMember.mockReturnValue(of({
+      success: true,
+      member: { _id: 'created-member' }
+    }));
+    planService.assignMembership
+      .mockReturnValueOnce(throwError(() => ({
+        error: { message: 'Assignment unavailable' }
+      })))
+      .mockReturnValueOnce(of({ success: true }));
+
+    component.openAddForm();
+    component.memberForm.fullName = 'New Member';
+    component.memberForm.phone = '1234567890';
+    component.memberForm.planId = 'plan-123';
+    component.memberForm.membershipStartDate = '2026-11-06';
+
+    component.saveMember();
+
+    expect(component.saving).toBe(false);
+    expect(component.showForm).toBe(true);
+    expect(component.memberForm.fullName).toBe('New Member');
+    expect(component.errorMessage).toContain('Assignment unavailable');
+
+    component.saveMember();
+
+    expect(memberService.addMember).toHaveBeenCalledTimes(1);
+    expect(planService.assignMembership).toHaveBeenCalledTimes(2);
+    expect(component.showForm).toBe(false);
   });
 
   it('generates and displays a QR image for the selected member', async () => {

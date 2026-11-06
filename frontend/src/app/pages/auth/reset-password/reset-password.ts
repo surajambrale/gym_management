@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { finalize } from 'rxjs';
@@ -26,7 +26,8 @@ export class ResetPassword implements OnInit {
     formBuilder: FormBuilder,
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
-    private readonly router: Router
+    private readonly router: Router,
+    private readonly changeDetector: ChangeDetectorRef
   ) {
     this.form = formBuilder.nonNullable.group({
       newPassword: ['', [Validators.required, Validators.minLength(8)]],
@@ -46,7 +47,10 @@ export class ResetPassword implements OnInit {
     }
 
     this.auth.validateResetToken(this.token)
-      .pipe(finalize(() => this.validating = false))
+      .pipe(finalize(() => {
+        this.validating = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           this.validToken = response?.valid === true;
@@ -97,7 +101,10 @@ export class ResetPassword implements OnInit {
     this.auth.resetPassword({
       token: this.token,
       ...this.form.getRawValue()
-    }).pipe(finalize(() => this.loading = false))
+    }).pipe(finalize(() => {
+      this.loading = false;
+      this.changeDetector.markForCheck();
+    }))
       .subscribe({
         next: () => this.router.navigate(['/login'], {
           queryParams: { reset: 'success' },

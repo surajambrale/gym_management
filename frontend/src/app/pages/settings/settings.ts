@@ -1,3 +1,4 @@
+import { ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -67,7 +68,8 @@ export class BusinessSettings implements OnInit {
 
   constructor(
     private readonly management: ManagementService,
-    private readonly auth: AuthService
+    private readonly auth: AuthService,
+    private readonly changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -119,7 +121,10 @@ export class BusinessSettings implements OnInit {
 
     this.passwordChanging = true;
     this.auth.changePassword(this.passwordForm)
-      .pipe(finalize(() => this.passwordChanging = false))
+      .pipe(finalize(() => {
+        this.passwordChanging = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           this.passwordSuccess = response.message || 'Password changed. Please sign in again.';
@@ -145,7 +150,10 @@ export class BusinessSettings implements OnInit {
     this.sessionsLoading = true;
     this.sessionsError = '';
     this.auth.getSessions()
-      .pipe(finalize(() => this.sessionsLoading = false))
+      .pipe(finalize(() => {
+        this.sessionsLoading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => this.sessions = response.sessions || [],
         error: error => {
@@ -164,7 +172,10 @@ export class BusinessSettings implements OnInit {
     this.sessionsSaving = true;
     this.sessionsError = '';
     this.auth.revokeSession(session.id)
-      .pipe(finalize(() => this.sessionsSaving = false))
+      .pipe(finalize(() => {
+        this.sessionsSaving = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           if (response.current) this.loggedOut.emit();
@@ -186,7 +197,10 @@ export class BusinessSettings implements OnInit {
     this.sessionsSaving = true;
     this.sessionsError = '';
     this.auth.revokeOtherSessions()
-      .pipe(finalize(() => this.sessionsSaving = false))
+      .pipe(finalize(() => {
+        this.sessionsSaving = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: () => {
           this.sessionsMessage = 'Other device sessions revoked.';
@@ -205,7 +219,10 @@ export class BusinessSettings implements OnInit {
     this.sessionsSaving = true;
     this.sessionsError = '';
     this.auth.revokeAllSessions()
-      .pipe(finalize(() => this.sessionsSaving = false))
+      .pipe(finalize(() => {
+        this.sessionsSaving = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: () => this.loggedOut.emit(),
         error: error => {
@@ -223,7 +240,10 @@ export class BusinessSettings implements OnInit {
     this.loading = true;
     this.errorMessage = '';
     this.management.getSettings()
-      .pipe(finalize(() => this.loading = false))
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           const business = response.business;
@@ -258,7 +278,10 @@ export class BusinessSettings implements OnInit {
     this.errorMessage = '';
     this.successMessage = '';
     this.management.updateSettings(this.form)
-      .pipe(finalize(() => this.saving = false))
+      .pipe(finalize(() => {
+        this.saving = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           const business = response.business;

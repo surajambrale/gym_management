@@ -1,5 +1,6 @@
 
 import {
+  ChangeDetectorRef,
   Component,
   OnInit,
   OnDestroy,
@@ -65,7 +66,8 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
 
   constructor(
     private attendanceService: AttendanceService,
-    private memberService: MemberService
+    private memberService: MemberService,
+    private changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -106,16 +108,20 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
   // Load Members
   loadMembers(): void {
     this.loadingMembers = true;
+    this.changeDetector.markForCheck();
 
-    this.memberService.getMembers('', '', 1, 100).subscribe({
+    this.memberService.getMembers('', '', 1, 100)
+      .pipe(finalize(() => {
+        this.loadingMembers = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response: any) => {
         this.members = response.members || [];
-        this.loadingMembers = false;
       },
       error: (error: any) => {
         console.error('Members loading error:', error);
         this.errorMessage = 'Unable to load members.';
-        this.loadingMembers = false;
       }
     });
   }
@@ -125,9 +131,14 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
     this.loadingAttendance = true;
     this.attendanceLoaded = false;
     this.errorMessage = '';
+    this.changeDetector.markForCheck();
 
     this.attendanceService
       .getDailyAttendance(this.selectedDate)
+      .pipe(finalize(() => {
+        this.loadingAttendance = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: (response: any) => {
           this.attendanceList = response.attendance || [];
@@ -136,12 +147,10 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
           ).length;
           this.attendanceLoaded = true;
           this.lastLoadedAt = Date.now();
-          this.loadingAttendance = false;
         },
         error: (error: any) => {
           console.error('Attendance loading error:', error);
           this.errorMessage = 'Unable to load attendance.';
-          this.loadingAttendance = false;
         }
       });
   }
@@ -165,17 +174,18 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
       memberId: this.selectedMemberId,
       attendanceType: 'Manual',
       notes: ''
-    }).subscribe({
+    }).pipe(finalize(() => {
+      this.processing = false;
+      this.changeDetector.markForCheck();
+    })).subscribe({
       next: (response: any) => {
         this.successMessage = response.message || 'Check-in successful.';
         this.selectedMemberId = '';
-        this.processing = false;
         this.loadDailyAttendance();
       },
       error: (error: any) => {
         this.errorMessage =
           error.error?.message || 'Check-in failed.';
-        this.processing = false;
       }
     });
   }
@@ -190,16 +200,19 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
     this.successMessage = '';
     this.errorMessage = '';
 
-    this.attendanceService.checkOut(memberId).subscribe({
+    this.attendanceService.checkOut(memberId)
+      .pipe(finalize(() => {
+        this.processing = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response: any) => {
         this.successMessage = response.message || 'Check-out successful.';
-        this.processing = false;
         this.loadDailyAttendance();
       },
       error: (error: any) => {
         this.errorMessage =
           error.error?.message || 'Check-out failed.';
-        this.processing = false;
       }
     });
   }
@@ -222,6 +235,7 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
 
       this.errorMessage = '';
       this.qrScanning = true;
+      this.changeDetector.markForCheck();
 
       this.scannerControls =
         await this.codeReader.decodeFromVideoDevice(
@@ -235,6 +249,7 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
 
               this.stopQRScanner();
               this.submitQRAttendance(qrToken);
+              this.changeDetector.markForCheck();
             }
           }
         );
@@ -244,6 +259,7 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
       this.qrScanning = false;
       this.errorMessage =
         'Unable to access camera. Please allow camera permission and try again.';
+      this.changeDetector.markForCheck();
     }
   }
 
@@ -256,13 +272,18 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
     this.qrProcessing = true;
     this.successMessage = '';
     this.errorMessage = '';
+    this.changeDetector.markForCheck();
 
-    this.attendanceService.checkInWithQR(qrToken).subscribe({
+    this.attendanceService.checkInWithQR(qrToken)
+      .pipe(finalize(() => {
+        this.qrProcessing = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (response: any) => {
         this.successMessage =
           `${response.member?.fullName || 'Member'} - ${response.message}`;
 
-        this.qrProcessing = false;
         this.qrScannerOpen = false;
         this.scanLocked = false;
 
@@ -272,7 +293,6 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
         this.errorMessage =
           error.error?.message || 'QR attendance failed.';
 
-        this.qrProcessing = false;
         this.scanLocked = false;
       }
     });
@@ -374,7 +394,10 @@ export class Attendance implements OnInit, OnDestroy, OnChanges {
     this.exportLoading = true;
     this.exportErrorMessage = '';
     this.getExportRows()
-      .pipe(finalize(() => this.exportLoading = false))
+      .pipe(finalize(() => {
+        this.exportLoading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: onRows,
         error: error => {

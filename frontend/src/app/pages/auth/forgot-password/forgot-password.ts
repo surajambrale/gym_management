@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { finalize } from 'rxjs';
@@ -20,7 +20,8 @@ export class ForgotPassword {
 
   constructor(
     formBuilder: FormBuilder,
-    private readonly auth: AuthService
+    private readonly auth: AuthService,
+    private readonly changeDetector: ChangeDetectorRef
   ) {
     this.form = formBuilder.nonNullable.group({
       email: ['', [Validators.required, Validators.email, Validators.maxLength(254)]]
@@ -39,7 +40,10 @@ export class ForgotPassword {
 
     this.loading = true;
     this.auth.forgotPassword(this.form.controls.email.value.trim())
-      .pipe(finalize(() => this.loading = false))
+      .pipe(finalize(() => {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           this.successMessage = response.message ||

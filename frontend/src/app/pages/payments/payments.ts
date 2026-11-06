@@ -1,8 +1,16 @@
 
-import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  Input,
+  OnChanges,
+  OnDestroy,
+  OnInit,
+  SimpleChanges
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 
 import { PaymentService } from '../../services/payment';
 import { MemberService } from '../../services/member';
@@ -19,7 +27,7 @@ import { GST_STATES } from '../../utils/gst-states';
   templateUrl: './payments.html',
   styleUrl: './payments.scss'
 })
-export class Payments implements OnInit, OnChanges {
+export class Payments implements OnInit, OnChanges, OnDestroy {
   readonly appName = environment.appName;
   @Input() active = false;
 
@@ -39,6 +47,7 @@ export class Payments implements OnInit, OnChanges {
   paymentSummaryLoaded = false;
   private queuedPaymentPage?: number;
   private lastLoadedAt = 0;
+  private membershipRequest?: Subscription;
 
   loading = false;
   membersLoading = false;
@@ -70,12 +79,17 @@ export class Payments implements OnInit, OnChanges {
     private paymentService: PaymentService,
     private memberService: MemberService,
     private membershipPlanService: MembershipPlanService,
-    private dashboardService: DashboardService
+    private dashboardService: DashboardService,
+    private changeDetector: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     this.loadPayments();
     this.loadMembers();
+  }
+
+  ngOnDestroy(): void {
+    this.membershipRequest?.unsubscribe();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -112,6 +126,7 @@ export class Payments implements OnInit, OnChanges {
         if (queuedPage !== undefined) {
           this.loadPayments(queuedPage);
         }
+        this.changeDetector.markForCheck();
       }))
       .subscribe({
       next: (response) => {
@@ -147,14 +162,17 @@ export class Payments implements OnInit, OnChanges {
 
     this.membersLoading = true;
 
-    this.memberService.getAllMatchingMembers('', 'Active').subscribe({
+    this.memberService.getAllMatchingMembers('', 'Active')
+      .pipe(finalize(() => {
+        this.membersLoading = false;
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
       next: (members) => {
         this.members = members;
-        this.membersLoading = false;
       },
       error: (error) => {
         console.error('Members loading error:', error);
-        this.membersLoading = false;
         this.errorMessage = 'Unable to load members.';
       }
     });
@@ -169,6 +187,8 @@ export class Payments implements OnInit, OnChanges {
 
   // Close payment form
   closePaymentForm(): void {
+    this.membershipRequest?.unsubscribe();
+    this.membershipsLoading = false;
     this.showPaymentForm = false;
     this.selectedMemberId = '';
     this.selectedMembershipId = '';
@@ -178,8 +198,11 @@ export class Payments implements OnInit, OnChanges {
 
   // When member changes
   onMemberChange(): void {
+    this.membershipRequest?.unsubscribe();
+    this.membershipRequest = undefined;
     this.selectedMembershipId = '';
     this.memberships = [];
+    this.membershipsLoading = false;
     this.successMessage = '';
     this.errorMessage = '';
 
@@ -187,12 +210,20 @@ export class Payments implements OnInit, OnChanges {
       return;
     }
 
+    const memberId = this.selectedMemberId;
     this.membershipsLoading = true;
 
-    this.membershipPlanService
-      .getMemberMemberships(this.selectedMemberId)
+    this.membershipRequest = this.membershipPlanService
+      .getMemberMemberships(memberId)
+      .pipe(finalize(() => {
+        if (this.selectedMemberId === memberId) {
+          this.membershipsLoading = false;
+        }
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: (response) => {
+          if (this.selectedMemberId !== memberId) return;
           const allMemberships = response.memberships || [];
 
           this.memberships = allMemberships.filter((membership: any) => {
@@ -203,13 +234,12 @@ export class Payments implements OnInit, OnChanges {
             return membership.status !== 'Cancelled' && pendingCents > 0;
           });
 
-          this.membershipsLoading = false;
         },
         error: (error) => {
+          if (this.selectedMemberId !== memberId) return;
           console.error('Membership loading error:', error);
           this.errorMessage =
             error.error?.message || 'Unable to load memberships.';
-          this.membershipsLoading = false;
         }
       });
   }
@@ -293,10 +323,13 @@ export class Payments implements OnInit, OnChanges {
 
     this.savingPayment = true;
 
-    this.paymentService.createPayment(paymentData).subscribe({
-      next: (response) => {
+    this.paymentService.createPayment(paymentData)
+      .pipe(finalize(() => {
         this.savingPayment = false;
-
+        this.changeDetector.markForCheck();
+      }))
+      .subscribe({
+      next: (response) => {
         if (response.success) {
           this.successMessage = 'Payment recorded successfully!';
           this.dashboardService.requestRefresh();
@@ -307,8 +340,6 @@ export class Payments implements OnInit, OnChanges {
       },
       error: (error) => {
         console.error('Create payment error:', error);
-
-        this.savingPayment = false;
         this.errorMessage =
           error.error?.message || 'Unable to record payment.';
       }
@@ -391,7 +422,10 @@ export class Payments implements OnInit, OnChanges {
     this.receiptLoadingId = payment._id;
     this.receiptErrorMessage = '';
     this.paymentService.getPaymentReceipt(payment._id)
-      .pipe(finalize(() => this.receiptLoadingId = ''))
+      .pipe(finalize(() => {
+        this.receiptLoadingId = '';
+        this.changeDetector.markForCheck();
+      }))
       .subscribe({
         next: response => {
           if (!response?.success || !response.receipt) {
